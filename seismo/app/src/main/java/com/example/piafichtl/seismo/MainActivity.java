@@ -5,6 +5,10 @@ import android.content.Context;
 import android.content.pm.PackageManager;
 import android.graphics.ImageFormat;
 import android.graphics.SurfaceTexture;
+import android.hardware.Sensor;
+import android.hardware.SensorEvent;
+import android.hardware.SensorEventListener;
+import android.hardware.SensorManager;
 import android.hardware.camera2.*;
 import android.hardware.camera2.params.StreamConfigurationMap;
 import android.media.Image;
@@ -37,9 +41,13 @@ import java.util.List;
 
 // camera2 test: https://inducesmile.com/android/android-camera2-api-example-tutorial/
 
-public class MainActivity extends AppCompatActivity {
+public class MainActivity extends AppCompatActivity implements SensorEventListener {
 
     private static final String TAG = "MainActivity";
+
+    // accelerometer base: https://stackoverflow.com/a/8101144
+    private SensorManager sensorManager;
+    double ax,ay,az;
 
     private String mCameraId;
     private CameraCaptureSession mCaptureSession;
@@ -72,6 +80,10 @@ public class MainActivity extends AppCompatActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
+
+        sensorManager=(SensorManager) getSystemService(SENSOR_SERVICE);
+        sensorManager.registerListener(this, sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER), SensorManager.SENSOR_DELAY_NORMAL);
+
 
         mTextureView = (TextureView) findViewById(R.id.texture);
         assert mTextureView != null;
@@ -341,5 +353,20 @@ public class MainActivity extends AppCompatActivity {
 
     public void onDestroy() {
         super.onDestroy();
+    }
+
+    @Override
+    public void onSensorChanged(SensorEvent sensorEvent) {
+        if (sensorEvent.sensor.getType()==Sensor.TYPE_ACCELEROMETER){
+            ax=sensorEvent.values[0];
+            ay=sensorEvent.values[1];
+            az=sensorEvent.values[2];
+        }
+        System.out.println("x: " + ax + " y: " + ay + " z: " + az);
+    }
+
+    @Override
+    public void onAccuracyChanged(Sensor sensor, int i) {
+
     }
 }
