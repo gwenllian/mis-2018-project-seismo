@@ -3,6 +3,7 @@ package com.example.piafichtl.seismo;
 import android.Manifest;
 import android.content.Context;
 import android.content.pm.PackageManager;
+import android.graphics.Color;
 import android.graphics.ImageFormat;
 import android.graphics.SurfaceTexture;
 import android.hardware.Sensor;
@@ -29,6 +30,10 @@ import android.view.View;
 import android.widget.Button;
 import android.widget.Toast;
 
+import com.jjoe64.graphview.GraphView;
+import com.jjoe64.graphview.series.DataPoint;
+import com.jjoe64.graphview.series.LineGraphSeries;
+
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
@@ -47,6 +52,8 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
 
     // accelerometer base: https://stackoverflow.com/a/8101144
     private SensorManager sensorManager;
+    private LineGraphSeries<DataPoint> series;
+    private static double currentX;
     double ax,ay,az;
 
     private String mCameraId;
@@ -83,7 +90,24 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
 
         sensorManager=(SensorManager) getSystemService(SENSOR_SERVICE);
         sensorManager.registerListener(this, sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER), SensorManager.SENSOR_DELAY_NORMAL);
+        GraphView graph = (GraphView) findViewById(R.id.graph);
 
+        series = new LineGraphSeries<>();
+        series.setColor(Color.GREEN);
+        graph.addSeries(series);
+
+        graph.getViewport().setScalable(true);
+        graph.getViewport().setScrollable(true);
+        graph.getViewport().setScalableY(true);
+        graph.getViewport().setScrollableY(true);
+        graph.getViewport().setXAxisBoundsManual(true);
+        graph.getViewport().setMinX(0.5);
+        graph.getViewport().setMaxX(6.5);
+        graph.getViewport().setYAxisBoundsManual(true);
+        graph.getViewport().setMinY(0);
+        graph.getViewport().setMaxY(10);
+
+        currentX = 0;
 
         mTextureView = (TextureView) findViewById(R.id.texture);
         assert mTextureView != null;
@@ -362,6 +386,8 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             ay=sensorEvent.values[1];
             az=sensorEvent.values[2];
         }
+        series.appendData(new DataPoint(currentX,az), true, 10);
+        currentX++;
         System.out.println("x: " + ax + " y: " + ay + " z: " + az);
     }
 
