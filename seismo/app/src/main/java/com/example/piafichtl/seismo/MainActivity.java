@@ -60,6 +60,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     private CameraCaptureSession mCaptureSession;
     private CameraDevice mCameraDevice;
     private Size mPreviewSize;
+    private int[] mRgbBuffer;
 
     private Button mTakePictureButton;
     private TextureView mTextureView;
@@ -280,14 +281,25 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     }
 
     protected void createCameraPreview() {
+        if (mCameraDevice == null ||!mTextureView.isAvailable() ||mPreviewSize == null) {
+            return;
+        }
         try {
             SurfaceTexture texture = mTextureView.getSurfaceTexture();
             assert texture != null;
             texture.setDefaultBufferSize(mPreviewSize.getWidth(), mPreviewSize.getHeight());
-            Surface surface = new Surface(texture);
             mCaptureRequestBuilder = mCameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW);
-            mCaptureRequestBuilder.addTarget(surface);
-            mCameraDevice.createCaptureSession(Arrays.asList(surface), new CameraCaptureSession.StateCallback(){
+            List surfaces = new ArrayList<>();
+
+            Surface previewSurface = new Surface(texture);
+            surfaces.add(previewSurface);
+            mCaptureRequestBuilder.addTarget(previewSurface);
+
+            Surface readerSurface = mImageReader.getSurface();
+            surfaces.add(readerSurface);
+            mCaptureRequestBuilder.addTarget(readerSurface);
+
+            mCameraDevice.createCaptureSession(surfaces, new CameraCaptureSession.StateCallback(){
                 @Override
                 public void onConfigured(@NonNull CameraCaptureSession cameraCaptureSession) {
                     //The camera is already closed
@@ -302,21 +314,46 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
                 public void onConfigureFailed(@NonNull CameraCaptureSession cameraCaptureSession) {
                     Toast.makeText(MainActivity.this, "Configuration change", Toast.LENGTH_SHORT).show();
                 }
-            }, null);
+            }, mBackgroundHandler);
         } catch (CameraAccessException e) {
             e.printStackTrace();
         }
     }
 
+
     private void openCamera() {
         CameraManager manager = (CameraManager) getSystemService(Context.CAMERA_SERVICE);
         Log.e(TAG, "is camera open");
         try {
+            ImageReader.OnImageAvailableListener mImageAvailable = new ImageReader.OnImageAvailableListener() {
+                @Override
+                public void onImageAvailable(ImageReader reader) {
+                    // FOR EVERY FRAME DO:
+                    Image image = reader.acquireLatestImage();
+                    if (image == null)
+                        return;
+
+                    final Image.Plane[] planes = image.getPlanes();
+                    final int total = planes[0].getRowStride() * 20;
+                    if (mRgbBuffer == null || mRgbBuffer.length < total)
+                        mRgbBuffer = new int[total];
+
+                    getRGBIntFromPlanes(planes);
+
+                    image.close();
+                }
+            };
+
             mCameraId = manager.getCameraIdList()[0];
             CameraCharacteristics characteristics = manager.getCameraCharacteristics(mCameraId);
             StreamConfigurationMap map = characteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP);
             assert map != null;
             mPreviewSize = map.getOutputSizes(SurfaceTexture.class)[0];
+            mImageReader = ImageReader.newInstance(mPreviewSize.getWidth(),
+                    mPreviewSize.getHeight(),
+                    ImageFormat.YUV_420_888, 1);
+            mImageReader.setOnImageAvailableListener(mImageAvailable,mBackgroundHandler);
+
             // Add permission for camera and let user grant the permission
             if (ActivityCompat.checkSelfPermission(this, Manifest.permission.CAMERA) != PackageManager.PERMISSION_GRANTED && ActivityCompat.checkSelfPermission(this, Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED) {
                 ActivityCompat.requestPermissions(MainActivity.this, new String[]{Manifest.permission.CAMERA, Manifest.permission.WRITE_EXTERNAL_STORAGE}, REQUEST_CAMERA_PERMISSION);
@@ -330,11 +367,14 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         Log.e(TAG, "openCamera X");
     }
 
+
+// http://werner-dittmann.blogspot.com/2016/03/using-androids-imagereader-with-camera2.html
     protected void updatePreview() {
         if(null == mCameraDevice) {
             Log.e(TAG, "updatePreview error, return");
         }
         mCaptureRequestBuilder.set(CaptureRequest.CONTROL_MODE, CameraMetadata.CONTROL_MODE_AUTO);
+
         try {
             mCaptureSession.setRepeatingRequest(mCaptureRequestBuilder.build(), null, mBackgroundHandler);
 
@@ -375,26 +415,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         } else {
             mTextureView.setSurfaceTextureListener(mTextureListener);
         }
-        // try to get each frame of the camera and compute average red and green values for PPG
-        final int width = 640;
-        final int height = 480;
-        ImageReader reader = ImageReader.newInstance(width, height, ImageFormat.YUV_420_888, 1);
-        ImageReader.OnImageAvailableListener readerListener = new ImageReader.OnImageAvailableListener() {
-            @Override
-            public void onImageAvailable(ImageReader reader) {
-                Image image = null;
-                image = reader.acquireLatestImage();
-                ByteBuffer buffer = image.getPlanes()[0].getBuffer();
-                byte[] bytes = new byte[buffer.capacity()];
-                buffer.get(bytes);
-                double GreenAvg;
-                double RedAvg;
-                GreenAvg=decodeYUV420SPtoRedBlueGreenAvg(bytes.clone(), height, width,3); //1 stands for red intensity, 2 for blue, 3 for green
-                RedAvg=decodeYUV420SPtoRedBlueGreenAvg(bytes.clone(), height, width,1); //1 stands for red intensity, 2 for blue, 3 for green
-                System.out.println(GreenAvg + " " + RedAvg);
-            }
-        };
-        reader.setOnImageAvailableListener(readerListener, mBackgroundHandler);
+
     }
 
     public void onDestroy() {
@@ -479,5 +500,64 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         int mean = (sum / frameSize);
 
         return mean;
+    }
+
+    //converting yuv into rgb
+    //http://werner-dittmann.blogspot.com/2016/03/solving-some-mysteries-about-androids.html
+
+    private void getRGBIntFromPlanes(Image.Plane[] planes) {
+        ByteBuffer yPlane = planes[0].getBuffer();
+        ByteBuffer uPlane = planes[1].getBuffer();
+        ByteBuffer vPlane = planes[2].getBuffer();
+
+        int bufferIndex = 0;
+        final int total = yPlane.capacity();
+        final int uvCapacity = uPlane.capacity();
+        final int width = planes[0].getRowStride();
+
+        int yPos = 0;
+        for (int i = 0; i < 20; i++) {
+            int uvPos = (i >> 1) * width;
+
+            for (int j = 0; j < width; j++) {
+                if (uvPos >= uvCapacity-1)
+                    break;
+                if (yPos >= total)
+                    break;
+
+                final int y1 = yPlane.get(yPos++) & 0xff;
+
+            /*
+              The ordering of the u (Cb) and v (Cr) bytes inside the planes is a
+              bit strange. The _first_ byte of the u-plane and the _second_ byte
+              of the v-plane build the u/v pair and belong to the first two pixels
+              (y-bytes), thus usual YUV 420 behavior. What the Android devs did
+              here (IMHO): just copy the interleaved NV21 U/V data to two planes
+              but keep the offset of the interleaving.
+             */
+                final int u = (uPlane.get(uvPos) & 0xff) - 128;
+                final int v = (vPlane.get(uvPos+1) & 0xff) - 128;
+                if ((j & 1) == 1) {
+                    uvPos += 2;
+                }
+
+                // This is the integer variant to convert YCbCr to RGB, NTSC values.
+                // formulae found at
+                // https://software.intel.com/en-us/android/articles/trusted-tools-in-the-new-android-world-optimization-techniques-from-intel-sse-intrinsics-to
+                // and on StackOverflow etc.
+                final int y1192 = 1192 * y1;
+                int r = (y1192 + 1634 * v);
+                int g = (y1192 - 833 * v - 400 * u);
+                int b = (y1192 + 2066 * u);
+
+                r = (r < 0) ? 0 : ((r > 262143) ? 262143 : r);
+                g = (g < 0) ? 0 : ((g > 262143) ? 262143 : g);
+                b = (b < 0) ? 0 : ((b > 262143) ? 262143 : b);
+
+                mRgbBuffer[bufferIndex++] = ((r << 6) & 0xff0000) |
+                        ((g >> 2) & 0xff00) |
+                        ((b >> 10) & 0xff);
+            }
+        }
     }
 }
