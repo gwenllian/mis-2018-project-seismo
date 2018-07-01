@@ -31,6 +31,7 @@ import android.widget.Button;
 import android.widget.Toast;
 
 import com.jjoe64.graphview.GraphView;
+import com.jjoe64.graphview.GridLabelRenderer;
 import com.jjoe64.graphview.series.DataPoint;
 import com.jjoe64.graphview.series.LineGraphSeries;
 
@@ -41,26 +42,78 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
 
-// camera2 test: https://inducesmile.com/android/android-camera2-api-example-tutorial/
+import static android.support.v4.math.MathUtils.clamp;
+import static java.lang.Math.pow;
 
 public class MainActivity extends AppCompatActivity implements SensorEventListener {
 
     private static final String TAG = "MainActivity";
 
-    // accelerometer base: https://stackoverflow.com/a/8101144
+    ///////////////////////////////////////
+    // ACCELEROMETER
+    // https://stackoverflow.com/a/8101144
+    // https://stackoverflow.com/a/8323572
     private SensorManager sensorManager;
     private LineGraphSeries<DataPoint> series;
     private static double currentX;
     double ax,ay,az;
+    float lastAcceleration[] = new float[3];
+    float accelFilter[] = new float[3];
+
+
+    @Override
+    public void onSensorChanged(SensorEvent sensorEvent) {
+        if (sensorEvent.sensor.getType()==Sensor.TYPE_ACCELEROMETER){
+            float updateFreq = 30;
+            float cutOffFreq = 0.9f;
+            float RC = 1.0f / cutOffFreq;
+            float dt = 1.0f / updateFreq;
+            float filterConstant = RC / (dt + RC);
+            float alpha = filterConstant;
+            float kAccelerometerMinStep = 0.033f;
+            float kAccelerometerNoiseAttenuation = 3.0f;
+
+            ax=sensorEvent.values[0];
+            ay=sensorEvent.values[1];
+            az=sensorEvent.values[2];
+
+
+            float d = clamp(Math.abs(norm(accelFilter[0], accelFilter[1], accelFilter[2]) - norm(ax, ay, az)) / kAccelerometerMinStep - 1.0f, 0.0f, 1.0f);
+            alpha = d * filterConstant / kAccelerometerNoiseAttenuation + (1.0f - d) * filterConstant;
+
+            accelFilter[0] = (float) (alpha * (accelFilter[0] + ax - lastAcceleration[0]));
+            accelFilter[1] = (float) (alpha * (accelFilter[1] + ay - lastAcceleration[1]));
+            accelFilter[2] = (float) (alpha * (accelFilter[2] + az - lastAcceleration[2]));
+
+            lastAcceleration[0] = (float)ax;
+            lastAcceleration[1] = (float)ay;
+            lastAcceleration[2] = (float)az;
+        }
+        series.appendData(new DataPoint(currentX,ay), true, 120);
+        currentX++;
+    }
+
+    public float norm(double a, double b, double c) {
+        return (float)Math.sqrt(pow(a,2)+pow(b,2)+pow(c,2));
+    }
+
+
+    @Override
+    public void onAccuracyChanged(Sensor sensor, int i) {
+
+    }
+    ///////////////////////////////////////
+    // CAMERA
+    // https://inducesmile.com/android/android-camera2-api-example-tutorial/
+    // http://werner-dittmann.blogspot.com/2016/03/using-androids-imagereader-with-camera2.html
 
     private String mCameraId;
-    private CameraCaptureSession mCaptureSession;
+    // Session for every camera frame
+    private CameraCaptureSession mPreviewSession;
     private CameraDevice mCameraDevice;
     private Size mPreviewSize;
-    private int[] mRgbBuffer;
 
     private Button mTakePictureButton;
     private TextureView mTextureView;
@@ -72,7 +125,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         ORIENTATIONS.append(Surface.ROTATION_270, 180);
     }
 
-    protected CaptureRequest.Builder mCaptureRequestBuilder;
+    protected CaptureRequest.Builder mPreviewBuilder;
     private ImageReader mImageReader;
     private File mFile;
     private static final int REQUEST_CAMERA_PERMISSION = 200;
@@ -94,39 +147,35 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         GraphView graph = (GraphView) findViewById(R.id.graph);
 
         series = new LineGraphSeries<>();
-        series.setColor(Color.GREEN);
+        series.setColor(Color.RED);
         graph.addSeries(series);
 
-        graph.getViewport().setScalable(true);
-        graph.getViewport().setScrollable(true);
-        graph.getViewport().setScalableY(true);
-        graph.getViewport().setScrollableY(true);
+        // https://stackoverflow.com/a/36400198
+        graph.getGridLabelRenderer().setGridStyle(GridLabelRenderer.GridStyle.NONE);
+        graph.getGridLabelRenderer().setHorizontalLabelsVisible(false);
+        graph.getGridLabelRenderer().setVerticalLabelsVisible(false);
+
+        graph.getViewport().setScalable(false);
+        graph.getViewport().setScrollable(false);
         graph.getViewport().setXAxisBoundsManual(true);
-        graph.getViewport().setMinX(0.5);
-        graph.getViewport().setMaxX(6.5);
+        graph.getViewport().setMinX(0);
+        graph.getViewport().setMaxX(50);
         graph.getViewport().setYAxisBoundsManual(true);
         graph.getViewport().setMinY(0);
-        graph.getViewport().setMaxY(10);
+        graph.getViewport().setMaxY(20);
 
-        currentX = 0;
+        currentX = 0.0;
 
+        // finding Views
         mTextureView = (TextureView) findViewById(R.id.texture);
         assert mTextureView != null;
         mTextureView.setSurfaceTextureListener(mTextureListener);
         mTakePictureButton = (Button) findViewById(R.id.btn_takepicture);
-        assert mTakePictureButton != null;
-        mTakePictureButton.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                takePicture();
-            }
-        });
     }
 
     TextureView.SurfaceTextureListener mTextureListener = new TextureView.SurfaceTextureListener() {
         @Override
         public void onSurfaceTextureAvailable(SurfaceTexture surface, int width, int height) {
-            //open your camera here
             openCamera();
         }
         @Override
@@ -187,99 +236,6 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         }
     }
 
-    protected void takePicture() {
-
-        if(null == mCameraDevice) {
-            Log.e(TAG, "cameraDevice is null");
-            return;
-        }
-
-        CameraManager manager = (CameraManager) getSystemService(Context.CAMERA_SERVICE);
-        try {
-            CameraCharacteristics characteristics = manager.getCameraCharacteristics(mCameraDevice.getId());
-            Size[] jpegSizes = null;
-            if (characteristics != null) {
-                jpegSizes = characteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP).getOutputSizes(ImageFormat.JPEG);
-            }
-            int width = 640;
-            int height = 480;
-            if (jpegSizes != null && 0 < jpegSizes.length) {
-                width = jpegSizes[0].getWidth();
-                height = jpegSizes[0].getHeight();
-            }
-            ImageReader reader = ImageReader.newInstance(width, height, ImageFormat.JPEG, 1);
-            List<Surface> outputSurfaces = new ArrayList<Surface>(2);
-            outputSurfaces.add(reader.getSurface());
-            outputSurfaces.add(new Surface(mTextureView.getSurfaceTexture()));
-            final CaptureRequest.Builder captureBuilder = mCameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_STILL_CAPTURE);
-            captureBuilder.addTarget(reader.getSurface());
-            captureBuilder.set(CaptureRequest.CONTROL_MODE, CameraMetadata.CONTROL_MODE_AUTO);
-            // Orientation
-            int rotation = getWindowManager().getDefaultDisplay().getRotation();
-            captureBuilder.set(CaptureRequest.JPEG_ORIENTATION, ORIENTATIONS.get(rotation));
-            final File file = new File(Environment.getExternalStorageDirectory()+"/pic.jpg");
-            ImageReader.OnImageAvailableListener readerListener = new ImageReader.OnImageAvailableListener() {
-                @Override
-                public void onImageAvailable(ImageReader reader) {
-                    Image image = null;
-                    try {
-                        image = reader.acquireLatestImage();
-                        ByteBuffer buffer = image.getPlanes()[0].getBuffer();
-                        byte[] bytes = new byte[buffer.capacity()];
-                        buffer.get(bytes);
-                        save(bytes);
-                    } catch (FileNotFoundException e) {
-                        e.printStackTrace();
-                    } catch (IOException e) {
-                        e.printStackTrace();
-                    } finally {
-                        if (image != null) {
-                            image.close();
-                        }
-                    }
-                }
-                private void save(byte[] bytes) throws IOException {
-                    OutputStream output = null;
-                    try {
-                        output = new FileOutputStream(file);
-                        output.write(bytes);
-                    } finally {
-                        if (null != output) {
-                            output.close();
-                        }
-                    }
-                }
-            };
-
-            reader.setOnImageAvailableListener(readerListener, mBackgroundHandler);
-            final CameraCaptureSession.CaptureCallback captureListener = new CameraCaptureSession.CaptureCallback() {
-                @Override
-                public void onCaptureCompleted(CameraCaptureSession session, CaptureRequest request, TotalCaptureResult result) {
-                    super.onCaptureCompleted(session, request, result);
-                    Toast.makeText(MainActivity.this, "Saved:" + file, Toast.LENGTH_SHORT).show();
-                    createCameraPreview();
-                }
-            };
-
-            mCameraDevice.createCaptureSession(outputSurfaces, new CameraCaptureSession.StateCallback() {
-                @Override
-                public void onConfigured(CameraCaptureSession session) {
-                    try {
-                        session.capture(captureBuilder.build(), captureListener, mBackgroundHandler);
-                    } catch (CameraAccessException e) {
-                        e.printStackTrace();
-                    }
-                }
-
-                @Override
-                public void onConfigureFailed(CameraCaptureSession session) {
-                }
-            }, mBackgroundHandler);
-        } catch (CameraAccessException e) {
-            e.printStackTrace();
-        }
-    }
-
     protected void createCameraPreview() {
         if (mCameraDevice == null ||!mTextureView.isAvailable() ||mPreviewSize == null) {
             return;
@@ -288,16 +244,16 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             SurfaceTexture texture = mTextureView.getSurfaceTexture();
             assert texture != null;
             texture.setDefaultBufferSize(mPreviewSize.getWidth(), mPreviewSize.getHeight());
-            mCaptureRequestBuilder = mCameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW);
+            mPreviewBuilder = mCameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW);
             List surfaces = new ArrayList<>();
 
             Surface previewSurface = new Surface(texture);
             surfaces.add(previewSurface);
-            mCaptureRequestBuilder.addTarget(previewSurface);
+            mPreviewBuilder.addTarget(previewSurface);
 
             Surface readerSurface = mImageReader.getSurface();
             surfaces.add(readerSurface);
-            mCaptureRequestBuilder.addTarget(readerSurface);
+            mPreviewBuilder.addTarget(readerSurface);
 
             mCameraDevice.createCaptureSession(surfaces, new CameraCaptureSession.StateCallback(){
                 @Override
@@ -307,7 +263,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
                         return;
                     }
                     // When the session is ready, we start displaying the preview.
-                    mCaptureSession = cameraCaptureSession;
+                    mPreviewSession = cameraCaptureSession;
                     updatePreview();
                 }
                 @Override
@@ -321,9 +277,12 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     }
 
 
+
+
     private void openCamera() {
         CameraManager manager = (CameraManager) getSystemService(Context.CAMERA_SERVICE);
         Log.e(TAG, "is camera open");
+        // Added ImageReader handling to capture every single frame
         try {
             ImageReader.OnImageAvailableListener mImageAvailable = new ImageReader.OnImageAvailableListener() {
                 @Override
@@ -333,12 +292,6 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
                     if (image == null)
                         return;
 
-                    final Image.Plane[] planes = image.getPlanes();
-                    final int total = planes[0].getRowStride() * 20;
-                    if (mRgbBuffer == null || mRgbBuffer.length < total)
-                        mRgbBuffer = new int[total];
-
-                    getRGBIntFromPlanes(planes);
 
                     image.close();
                 }
@@ -348,6 +301,8 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             CameraCharacteristics characteristics = manager.getCameraCharacteristics(mCameraId);
             StreamConfigurationMap map = characteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP);
             assert map != null;
+            // Assigning appropriate sizes and YUV image format
+            // YUV ist supported by every device; others should be used with caution
             mPreviewSize = map.getOutputSizes(SurfaceTexture.class)[0];
             mImageReader = ImageReader.newInstance(mPreviewSize.getWidth(),
                     mPreviewSize.getHeight(),
@@ -367,16 +322,14 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         Log.e(TAG, "openCamera X");
     }
 
-
-// http://werner-dittmann.blogspot.com/2016/03/using-androids-imagereader-with-camera2.html
     protected void updatePreview() {
         if(null == mCameraDevice) {
             Log.e(TAG, "updatePreview error, return");
         }
-        mCaptureRequestBuilder.set(CaptureRequest.CONTROL_MODE, CameraMetadata.CONTROL_MODE_AUTO);
+        mPreviewBuilder.set(CaptureRequest.CONTROL_MODE, CameraMetadata.CONTROL_MODE_AUTO);
 
         try {
-            mCaptureSession.setRepeatingRequest(mCaptureRequestBuilder.build(), null, mBackgroundHandler);
+            mPreviewSession.setRepeatingRequest(mPreviewBuilder.build(), null, mBackgroundHandler);
 
         } catch (CameraAccessException e) {
             e.printStackTrace();
@@ -422,26 +375,10 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         super.onDestroy();
     }
 
-    @Override
-    public void onSensorChanged(SensorEvent sensorEvent) {
 
-        if (sensorEvent.sensor.getType()==Sensor.TYPE_ACCELEROMETER){
-            ax=sensorEvent.values[0];
-            ay=sensorEvent.values[1];
-            az=sensorEvent.values[2];
-        }
-        series.appendData(new DataPoint(currentX,ay), true, 10);
-        currentX++;
-    }
-
-    @Override
-    public void onAccuracyChanged(Sensor sensor, int i) {
-
-    }
-
+    // IMAGE PROCESSING
     // temporary: https://github.com/YahyaOdeh/HealthWatcher
-
-    private static int decodeYUV420SPtoRedBlueGreenSum(byte[] yuv420sp, int width, int height, int type) {
+    private static int decodeYUV420toRGBSum(byte[] yuv420sp, int width, int height, int type) {
         if (yuv420sp == null) return 0;
 
         final int frameSize = width * height;
@@ -450,9 +387,9 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         int sumr = 0;
         int sumg = 0;
         int sumb = 0;
-        for (int j = 0, yp = 0; j < height; j++) {
+        for (int j = 0, yp = 0; j <= height; j++) {
             int uvp = frameSize + (j >> 1) * width, u = 0, v = 0;
-            for (int i = 0; i < width; i++, yp++) {
+            for (int i = 0; i <= width; i++, yp++) {
                 int y = (0xff & yuv420sp[yp]) - 16;
                 if (y < 0) y = 0;
                 if ((i & 1) == 0) {
@@ -492,72 +429,14 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     }
 
 
-    public static double decodeYUV420SPtoRedBlueGreenAvg(byte[] yuv420sp, int width, int height, int type) {
+    public static double decodeYUV420toRGBAvg(byte[] yuv420sp, int width, int height, int type) {
         if (yuv420sp == null) return 0;
         final int frameSize = width * height;
 
-        int sum = decodeYUV420SPtoRedBlueGreenSum(yuv420sp, width, height, type);
+        int sum = decodeYUV420toRGBSum(yuv420sp, width, height, type);
         int mean = (sum / frameSize);
 
         return mean;
     }
 
-    //converting yuv into rgb
-    //http://werner-dittmann.blogspot.com/2016/03/solving-some-mysteries-about-androids.html
-
-    private void getRGBIntFromPlanes(Image.Plane[] planes) {
-        ByteBuffer yPlane = planes[0].getBuffer();
-        ByteBuffer uPlane = planes[1].getBuffer();
-        ByteBuffer vPlane = planes[2].getBuffer();
-
-        int bufferIndex = 0;
-        final int total = yPlane.capacity();
-        final int uvCapacity = uPlane.capacity();
-        final int width = planes[0].getRowStride();
-
-        int yPos = 0;
-        for (int i = 0; i < 20; i++) {
-            int uvPos = (i >> 1) * width;
-
-            for (int j = 0; j < width; j++) {
-                if (uvPos >= uvCapacity-1)
-                    break;
-                if (yPos >= total)
-                    break;
-
-                final int y1 = yPlane.get(yPos++) & 0xff;
-
-            /*
-              The ordering of the u (Cb) and v (Cr) bytes inside the planes is a
-              bit strange. The _first_ byte of the u-plane and the _second_ byte
-              of the v-plane build the u/v pair and belong to the first two pixels
-              (y-bytes), thus usual YUV 420 behavior. What the Android devs did
-              here (IMHO): just copy the interleaved NV21 U/V data to two planes
-              but keep the offset of the interleaving.
-             */
-                final int u = (uPlane.get(uvPos) & 0xff) - 128;
-                final int v = (vPlane.get(uvPos+1) & 0xff) - 128;
-                if ((j & 1) == 1) {
-                    uvPos += 2;
-                }
-
-                // This is the integer variant to convert YCbCr to RGB, NTSC values.
-                // formulae found at
-                // https://software.intel.com/en-us/android/articles/trusted-tools-in-the-new-android-world-optimization-techniques-from-intel-sse-intrinsics-to
-                // and on StackOverflow etc.
-                final int y1192 = 1192 * y1;
-                int r = (y1192 + 1634 * v);
-                int g = (y1192 - 833 * v - 400 * u);
-                int b = (y1192 + 2066 * u);
-
-                r = (r < 0) ? 0 : ((r > 262143) ? 262143 : r);
-                g = (g < 0) ? 0 : ((g > 262143) ? 262143 : g);
-                b = (b < 0) ? 0 : ((b > 262143) ? 262143 : b);
-
-                mRgbBuffer[bufferIndex++] = ((r << 6) & 0xff0000) |
-                        ((g >> 2) & 0xff00) |
-                        ((b >> 10) & 0xff);
-            }
-        }
-    }
 }
