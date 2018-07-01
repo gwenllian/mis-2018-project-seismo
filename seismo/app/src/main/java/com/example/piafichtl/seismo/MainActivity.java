@@ -61,37 +61,48 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     double ax,ay,az;
     float lastAcceleration[] = new float[3];
     float accelFilter[] = new float[3];
+    float gravity[] = new float[3];
 
 
     @Override
     public void onSensorChanged(SensorEvent sensorEvent) {
         if (sensorEvent.sensor.getType()==Sensor.TYPE_ACCELEROMETER){
-            float updateFreq = 30;
-            float cutOffFreq = 0.9f;
-            float RC = 1.0f / cutOffFreq;
-            float dt = 1.0f / updateFreq;
-            float filterConstant = RC / (dt + RC);
-            float alpha = filterConstant;
-            float kAccelerometerMinStep = 0.033f;
-            float kAccelerometerNoiseAttenuation = 3.0f;
-
             ax=sensorEvent.values[0];
             ay=sensorEvent.values[1];
             az=sensorEvent.values[2];
 
+            final float alpha = 0.5f;
 
-            float d = clamp(Math.abs(norm(accelFilter[0], accelFilter[1], accelFilter[2]) - norm(ax, ay, az)) / kAccelerometerMinStep - 1.0f, 0.0f, 1.0f);
-            alpha = d * filterConstant / kAccelerometerNoiseAttenuation + (1.0f - d) * filterConstant;
+            gravity[0] = alpha * gravity[0] + (1 - alpha) * sensorEvent.values[0];
+            gravity[1] = alpha * gravity[1] + (1 - alpha) * sensorEvent.values[1];
+            gravity[2] = alpha * gravity[2] + (1 - alpha) * sensorEvent.values[2];
 
-            accelFilter[0] = (float) (alpha * (accelFilter[0] + ax - lastAcceleration[0]));
-            accelFilter[1] = (float) (alpha * (accelFilter[1] + ay - lastAcceleration[1]));
-            accelFilter[2] = (float) (alpha * (accelFilter[2] + az - lastAcceleration[2]));
+            accelFilter[0] = sensorEvent.values[0] - gravity[0];
+            accelFilter[1] = sensorEvent.values[1] - gravity[1];
+            accelFilter[2] = sensorEvent.values[2] - gravity[2];
 
-            lastAcceleration[0] = (float)ax;
-            lastAcceleration[1] = (float)ay;
-            lastAcceleration[2] = (float)az;
+//            float updateFreq = 30;
+//            float cutOffFreq = 0.9f;
+//            float RC = 1.0f / cutOffFreq;
+//            float dt = 1.0f / updateFreq;
+//            float filterConstant = RC / (dt + RC);
+//            float alpha = filterConstant;
+//            float kAccelerometerMinStep = 0.033f;
+//            float kAccelerometerNoiseAttenuation = 3.0f;
+
+//
+//            float d = clamp(Math.abs(norm(accelFilter[0], accelFilter[1], accelFilter[2]) - norm(ax, ay, az)) / kAccelerometerMinStep - 1.0f, 0.0f, 1.0f);
+//            alpha = d * filterConstant / kAccelerometerNoiseAttenuation + (1.0f - d) * filterConstant;
+//
+//            accelFilter[0] = (float) (alpha * (accelFilter[0] + ax - lastAcceleration[0]));
+//            accelFilter[1] = (float) (alpha * (accelFilter[1] + ay - lastAcceleration[1]));
+//            accelFilter[2] = (float) (alpha * (accelFilter[2] + az - lastAcceleration[2]));
+//
+//            lastAcceleration[0] = (float)ax;
+//            lastAcceleration[1] = (float)ay;
+//            lastAcceleration[2] = (float)az;
         }
-        series.appendData(new DataPoint(currentX,ay), true, 120);
+        series.appendData(new DataPoint(currentX,accelFilter[1]), true, 200);
         currentX++;
     }
 
@@ -159,10 +170,10 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         graph.getViewport().setScrollable(false);
         graph.getViewport().setXAxisBoundsManual(true);
         graph.getViewport().setMinX(0);
-        graph.getViewport().setMaxX(50);
+        graph.getViewport().setMaxX(200);
         graph.getViewport().setYAxisBoundsManual(true);
-        graph.getViewport().setMinY(0);
-        graph.getViewport().setMaxY(20);
+        graph.getViewport().setMinY(-0.05);
+        graph.getViewport().setMaxY(0.05);
 
         currentX = 0.0;
 
@@ -277,8 +288,6 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     }
 
 
-
-
     private void openCamera() {
         CameraManager manager = (CameraManager) getSystemService(Context.CAMERA_SERVICE);
         Log.e(TAG, "is camera open");
@@ -291,8 +300,19 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
                     Image image = reader.acquireLatestImage();
                     if (image == null)
                         return;
+                    Image.Plane Y = image.getPlanes()[0];
+                    Image.Plane U = image.getPlanes()[1];
+                    Image.Plane V = image.getPlanes()[2];
 
+                    int Yb = Y.getBuffer().remaining();
+                    int Ub = U.getBuffer().remaining();
+                    int Vb = V.getBuffer().remaining();
 
+                    byte[] buffer = new byte[Yb + Ub + Vb];
+
+                    double avg = decodeYUV420toRGBAvg(buffer.clone(),mPreviewSize.getHeight(),mPreviewSize.getWidth(),1);
+
+                    Log.e(TAG,""+avg);
                     image.close();
                 }
             };
@@ -306,7 +326,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             mPreviewSize = map.getOutputSizes(SurfaceTexture.class)[0];
             mImageReader = ImageReader.newInstance(mPreviewSize.getWidth(),
                     mPreviewSize.getHeight(),
-                    ImageFormat.YUV_420_888, 1);
+                    ImageFormat.YUV_420_888, 3);
             mImageReader.setOnImageAvailableListener(mImageAvailable,mBackgroundHandler);
 
             // Add permission for camera and let user grant the permission
@@ -379,7 +399,6 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     // IMAGE PROCESSING
     // temporary: https://github.com/YahyaOdeh/HealthWatcher
     private static int decodeYUV420toRGBSum(byte[] yuv420sp, int width, int height, int type) {
-        if (yuv420sp == null) return 0;
 
         final int frameSize = width * height;
 
@@ -387,9 +406,9 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         int sumr = 0;
         int sumg = 0;
         int sumb = 0;
-        for (int j = 0, yp = 0; j <= height; j++) {
+        for (int j = 0, yp = 0; j < height; j++) {
             int uvp = frameSize + (j >> 1) * width, u = 0, v = 0;
-            for (int i = 0; i <= width; i++, yp++) {
+            for (int i = 0; i < width; i++, yp++) {
                 int y = (0xff & yuv420sp[yp]) - 16;
                 if (y < 0) y = 0;
                 if ((i & 1) == 0) {
@@ -413,16 +432,16 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
                 int green = (pixel >> 8) & 0xff;
                 int blue = pixel&0xff;
                 sumr += red;
-                sumg +=green;
-                sumb +=blue;
+                sumg += green;
+                sumb += blue;
             }
         }
         switch(type){
-            case (1): sum =sumr;
+            case (1): sum = sumr;
                 break;
-            case (2): sum =sumb;
+            case (2): sum = sumb;
                 break;
-            case (3): sum =sumg;
+            case (3): sum = sumg;
                 break;
         }
         return sum;
@@ -430,7 +449,6 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
 
 
     public static double decodeYUV420toRGBAvg(byte[] yuv420sp, int width, int height, int type) {
-        if (yuv420sp == null) return 0;
         final int frameSize = width * height;
 
         int sum = decodeYUV420toRGBSum(yuv420sp, width, height, type);
