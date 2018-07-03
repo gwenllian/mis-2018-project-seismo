@@ -14,6 +14,7 @@ import android.hardware.camera2.*;
 import android.hardware.camera2.params.StreamConfigurationMap;
 import android.media.Image;
 import android.media.ImageReader;
+import android.os.Build;
 import android.os.Environment;
 import android.os.Handler;
 import android.os.HandlerThread;
@@ -120,6 +121,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     // https://inducesmile.com/android/android-camera2-api-example-tutorial/
     // http://werner-dittmann.blogspot.com/2016/03/using-androids-imagereader-with-camera2.html
 
+    private CameraManager mCameraManager;
     private String mCameraId;
     // Session for every camera frame
     private CameraCaptureSession mPreviewSession;
@@ -152,6 +154,23 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
+
+        Boolean isFlashAvailable = getApplicationContext().getPackageManager()
+                .hasSystemFeature(PackageManager.FEATURE_CAMERA_FLASH);
+
+        if (!isFlashAvailable) {
+
+            Toast.makeText(MainActivity.this, "Sorry this app needs to use flash", Toast.LENGTH_LONG).show();
+            finish();
+            return;
+        }
+
+        mCameraManager = (CameraManager) getSystemService(Context.CAMERA_SERVICE);
+        try {
+            mCameraId = mCameraManager.getCameraIdList()[0];
+        } catch (CameraAccessException e) {
+            e.printStackTrace();
+        }
 
         sensorManager=(SensorManager) getSystemService(SENSOR_SERVICE);
         sensorManager.registerListener(this, sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER), SensorManager.SENSOR_DELAY_NORMAL);
@@ -207,15 +226,19 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         public void onOpened(CameraDevice camera) {
             //This is called when the camera is open
             Log.e(TAG, "onOpened");
+            turnOnFlash();
             mCameraDevice = camera;
             createCameraPreview();
         }
         @Override
         public void onDisconnected(CameraDevice camera) {
+            turnOffFlash();
             mCameraDevice.close();
+
         }
         @Override
         public void onError(CameraDevice camera, int error) {
+            turnOffFlash();
             mCameraDevice.close();
             mCameraDevice = null;
         }
@@ -289,7 +312,6 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
 
 
     private void openCamera() {
-        CameraManager manager = (CameraManager) getSystemService(Context.CAMERA_SERVICE);
         Log.e(TAG, "is camera open");
         // Added ImageReader handling to capture every single frame
         try {
@@ -317,8 +339,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
                 }
             };
 
-            mCameraId = manager.getCameraIdList()[0];
-            CameraCharacteristics characteristics = manager.getCameraCharacteristics(mCameraId);
+            CameraCharacteristics characteristics = mCameraManager.getCameraCharacteristics(mCameraId);
             StreamConfigurationMap map = characteristics.get(CameraCharacteristics.SCALER_STREAM_CONFIGURATION_MAP);
             assert map != null;
             // Assigning appropriate sizes and YUV image format
@@ -334,7 +355,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
                 ActivityCompat.requestPermissions(MainActivity.this, new String[]{Manifest.permission.CAMERA, Manifest.permission.WRITE_EXTERNAL_STORAGE}, REQUEST_CAMERA_PERMISSION);
                 return;
             }
-            manager.openCamera(mCameraId, stateCallback, null);
+            mCameraManager.openCamera(mCameraId, stateCallback, null);
         } catch (CameraAccessException e) {
             e.printStackTrace();
         }
@@ -455,6 +476,27 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         int mean = (sum / frameSize);
 
         return mean;
+    }
+
+    public void turnOnFlash() {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                mCameraManager.setTorchMode(mCameraId, true);
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    public void turnOffFlash() {
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                mCameraManager.setTorchMode(mCameraId, false);
+            }
+
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
     }
 
 }
