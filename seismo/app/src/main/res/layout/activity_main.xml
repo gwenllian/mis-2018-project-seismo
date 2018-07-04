@@ -10,49 +10,40 @@
     <com.jjoe64.graphview.GraphView
         android:id="@+id/graph"
         android:layout_width="384dp"
-        android:layout_height="29dp"
-        android:layout_marginTop="13dp"
-        app:layout_constraintBottom_toTopOf="@+id/textView"
+        android:layout_height="30dp"
+        android:layout_marginBottom="42dp"
+        android:layout_marginTop="40dp"
+        app:layout_constraintBottom_toTopOf="@+id/texture"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent" />
-
-    <TextView
-        android:id="@+id/textView"
-        android:layout_width="wrap_content"
-        android:layout_height="0dp"
-        android:layout_marginBottom="226dp"
-        android:layout_marginEnd="94dp"
-        android:layout_marginStart="40dp"
-        android:text="Hello World!"
-        app:layout_constraintBottom_toTopOf="@+id/btn_takepicture"
-        app:layout_constraintEnd_toStartOf="@+id/texture"
-        app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@+id/graph" />
 
     <TextureView
         android:id="@+id/texture"
-        android:layout_width="0dp"
+        android:layout_width="185dp"
         android:layout_height="119dp"
-        android:layout_above="@+id/btn_takepicture"
         android:layout_alignParentTop="true"
-        android:layout_marginEnd="36dp"
-        android:layout_marginTop="119dp"
+        android:layout_marginBottom="40dp"
+        android:layout_marginEnd="99dp"
+        android:layout_marginStart="100dp"
+        android:layout_marginTop="42dp"
+        app:layout_constraintBottom_toTopOf="@+id/camgraph"
         app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintStart_toEndOf="@+id/textView"
-        app:layout_constraintTop_toTopOf="parent" />
+        app:layout_constraintStart_toStartOf="parent"
+        app:layout_constraintTop_toBottomOf="@+id/graph" />
 
-    <Button
-        android:id="@+id/btn_takepicture"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
-        android:layout_alignParentBottom="true"
-        android:layout_centerHorizontal="true"
-        android:layout_marginBottom="79dp"
-        android:text="@string/take_picture"
+    <com.jjoe64.graphview.GraphView
+        android:id="@+id/camgraph"
+        android:layout_width="384dp"
+        android:layout_height="30dp"
+        android:layout_marginBottom="195dp"
+        android:layout_marginTop="40dp"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
-        app:layout_constraintTop_toBottomOf="@+id/textView" />
+        app:layout_constraintTop_toBottomOf="@+id/texture"
+        tools:layout_constraintTop_toBottomOf="@+id/texture"
+        tools:layout_marginTop="40dp" />
+
 
 </android.support.constraint.ConstraintLayout>

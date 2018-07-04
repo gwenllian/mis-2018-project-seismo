@@ -3,9 +3,12 @@ package com.example.piafichtl.seismo;
 import android.Manifest;
 import android.content.Context;
 import android.content.pm.PackageManager;
+import android.graphics.Bitmap;
 import android.graphics.Color;
 import android.graphics.ImageFormat;
+import android.graphics.Rect;
 import android.graphics.SurfaceTexture;
+import android.graphics.YuvImage;
 import android.hardware.Sensor;
 import android.hardware.SensorEvent;
 import android.hardware.SensorEventListener;
@@ -18,6 +21,11 @@ import android.os.Build;
 import android.os.Environment;
 import android.os.Handler;
 import android.os.HandlerThread;
+import android.renderscript.Allocation;
+import android.renderscript.Element;
+import android.renderscript.RenderScript;
+import android.renderscript.ScriptIntrinsicYuvToRGB;
+import android.renderscript.Type;
 import android.support.annotation.NonNull;
 import android.support.v4.app.ActivityCompat;
 import android.support.v7.app.AppCompatActivity;
@@ -36,6 +44,7 @@ import com.jjoe64.graphview.GridLabelRenderer;
 import com.jjoe64.graphview.series.DataPoint;
 import com.jjoe64.graphview.series.LineGraphSeries;
 
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileNotFoundException;
 import java.io.FileOutputStream;
@@ -82,26 +91,27 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             accelFilter[1] = sensorEvent.values[1] - gravity[1];
             accelFilter[2] = sensorEvent.values[2] - gravity[2];
 
-//            float updateFreq = 30;
-//            float cutOffFreq = 0.9f;
-//            float RC = 1.0f / cutOffFreq;
-//            float dt = 1.0f / updateFreq;
-//            float filterConstant = RC / (dt + RC);
-//            float alpha = filterConstant;
-//            float kAccelerometerMinStep = 0.033f;
-//            float kAccelerometerNoiseAttenuation = 3.0f;
+            /*float updateFreq = 30;
+            float cutOffFreq = 0.9f;
+            float RC = 1.0f / cutOffFreq;
+            float dt = 1.0f / updateFreq;
+            float filterConstant = RC / (dt + RC);
+            float alpha = filterConstant;
+            float kAccelerometerMinStep = 0.033f;
+            float kAccelerometerNoiseAttenuation = 3.0f;
 
-//
-//            float d = clamp(Math.abs(norm(accelFilter[0], accelFilter[1], accelFilter[2]) - norm(ax, ay, az)) / kAccelerometerMinStep - 1.0f, 0.0f, 1.0f);
-//            alpha = d * filterConstant / kAccelerometerNoiseAttenuation + (1.0f - d) * filterConstant;
-//
-//            accelFilter[0] = (float) (alpha * (accelFilter[0] + ax - lastAcceleration[0]));
-//            accelFilter[1] = (float) (alpha * (accelFilter[1] + ay - lastAcceleration[1]));
-//            accelFilter[2] = (float) (alpha * (accelFilter[2] + az - lastAcceleration[2]));
-//
-//            lastAcceleration[0] = (float)ax;
-//            lastAcceleration[1] = (float)ay;
-//            lastAcceleration[2] = (float)az;
+
+            float d = clamp(Math.abs(norm(accelFilter[0], accelFilter[1], accelFilter[2]) - norm(ax, ay, az)) / kAccelerometerMinStep - 1.0f, 0.0f, 1.0f);
+            alpha = d * filterConstant / kAccelerometerNoiseAttenuation + (1.0f - d) * filterConstant;
+
+            accelFilter[0] = (float) (alpha * (accelFilter[0] + ax - lastAcceleration[0]));
+            accelFilter[1] = (float) (alpha * (accelFilter[1] + ay - lastAcceleration[1]));
+            accelFilter[2] = (float) (alpha * (accelFilter[2] + az - lastAcceleration[2]));
+
+            lastAcceleration[0] = (float)ax;
+            lastAcceleration[1] = (float)ay;
+            lastAcceleration[2] = (float)az;*/
+
         }
         series.appendData(new DataPoint(currentX,accelFilter[1]), true, 200);
         currentX++;
@@ -146,6 +156,18 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     private Handler mBackgroundHandler;
     private HandlerThread mBackgroundThread;
 
+    RenderScript rs;
+    ScriptIntrinsicYuvToRGB si;
+
+    int redMean;
+    int greenMean;
+    private static double currentCamX;
+
+    private LineGraphSeries<DataPoint> camSeries;
+
+    //später felder für rot und grün!!!
+
+
     public MainActivity() {
         Log.i(TAG, "Instantiated new " + this.getClass());
     }
@@ -164,6 +186,12 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             finish();
             return;
         }
+
+        rs = RenderScript.create(this);
+        si = ScriptIntrinsicYuvToRGB.create(rs, Element.U8_4(rs));
+
+
+
 
         mCameraManager = (CameraManager) getSystemService(Context.CAMERA_SERVICE);
         try {
@@ -200,7 +228,6 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         mTextureView = (TextureView) findViewById(R.id.texture);
         assert mTextureView != null;
         mTextureView.setSurfaceTextureListener(mTextureListener);
-        mTakePictureButton = (Button) findViewById(R.id.btn_takepicture);
     }
 
     TextureView.SurfaceTextureListener mTextureListener = new TextureView.SurfaceTextureListener() {
@@ -226,19 +253,17 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         public void onOpened(CameraDevice camera) {
             //This is called when the camera is open
             Log.e(TAG, "onOpened");
-            turnOnFlash();
             mCameraDevice = camera;
             createCameraPreview();
         }
         @Override
         public void onDisconnected(CameraDevice camera) {
-            turnOffFlash();
             mCameraDevice.close();
+            mCameraDevice = null;
 
         }
         @Override
         public void onError(CameraDevice camera, int error) {
-            turnOffFlash();
             mCameraDevice.close();
             mCameraDevice = null;
         }
@@ -279,6 +304,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             assert texture != null;
             texture.setDefaultBufferSize(mPreviewSize.getWidth(), mPreviewSize.getHeight());
             mPreviewBuilder = mCameraDevice.createCaptureRequest(CameraDevice.TEMPLATE_PREVIEW);
+            mPreviewBuilder.set(CaptureRequest.FLASH_MODE, CameraMetadata.FLASH_MODE_TORCH);
             List surfaces = new ArrayList<>();
 
             Surface previewSurface = new Surface(texture);
@@ -314,12 +340,17 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     private void openCamera() {
         Log.e(TAG, "is camera open");
         // Added ImageReader handling to capture every single frame
+
+
+
         try {
             ImageReader.OnImageAvailableListener mImageAvailable = new ImageReader.OnImageAvailableListener() {
                 @Override
                 public void onImageAvailable(ImageReader reader) {
                     // FOR EVERY FRAME DO:
                     Image image = reader.acquireLatestImage();
+
+                    Log.i(TAG, "img " + image.getHeight());
                     if (image == null)
                         return;
                     Image.Plane Y = image.getPlanes()[0];
@@ -332,9 +363,56 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
 
                     byte[] buffer = new byte[Yb + Ub + Vb];
 
-                    double avg = decodeYUV420toRGBAvg(buffer.clone(),mPreviewSize.getHeight(),mPreviewSize.getWidth(),1);
+                    Y.getBuffer().get(buffer, 0, Yb);
+                    U.getBuffer().get(buffer, Yb, Ub);
+                    V.getBuffer().get(buffer, Yb + Ub , Vb);
 
-                    Log.e(TAG,""+avg);
+                    Log.i(TAG, "buf " + buffer.length);
+
+                    //double avg = decodeYUV420toRGBAvg(buffer.clone(),mPreviewSize.getHeight(),mPreviewSize.getWidth(),1);
+
+                    //Log.e(TAG,""+avg);
+
+                    Type.Builder yuvType = new Type.Builder(rs, Element.U8(rs)).setX(buffer.length);
+                    Allocation in = Allocation.createTyped(rs, yuvType.create(), Allocation.USAGE_SCRIPT);
+
+                    Type.Builder rgbaType = new Type.Builder(rs, Element.RGBA_8888(rs)).setX(mPreviewSize.getWidth()).setY(mPreviewSize.getHeight());
+                    Allocation out = Allocation.createTyped(rs, rgbaType.create(), Allocation.USAGE_SCRIPT);
+
+                    in.copyFrom(buffer);
+
+                    si.setInput(in);
+                    si.forEach(out);
+
+                    Bitmap bmp = Bitmap.createBitmap(mPreviewSize.getWidth(), mPreviewSize.getHeight(), Bitmap.Config.ARGB_8888);
+                    int rgba[] = new int[mPreviewSize.getWidth()*mPreviewSize.getHeight()];   // the rgba[] array
+
+                    bmp.getPixels(rgba, 0, mPreviewSize.getWidth(), 0, 0, mPreviewSize.getWidth(), mPreviewSize.getHeight());
+
+                    Log.i(TAG, "rgb" + rgba.length);
+
+                    int sumR = 0;
+                    int sumG = 0;
+
+                    int r[] = new int[rgba.length/4];
+                    int g[] = new int[rgba.length/4];
+                    int b[] = new int[rgba.length/4];
+
+                    for (int i = 0; i < r.length; i++){
+                        r[i] = rgba[i*4];
+                        sumR += rgba[i*4];
+                        g[i] = rgba[i*4+1];
+                        sumG += rgba[i*4 +1];
+                        b[i] = rgba[i*4+2];
+                    }
+
+                    Log.i(TAG, "r" + r.length + g.length + b.length);
+
+                    redMean = sumR/r.length;
+                    greenMean = sumG/g.length;
+
+                    Log.i(TAG, "r "+ redMean + " g " + greenMean);
+
                     image.close();
                 }
             };
@@ -423,7 +501,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
 
         final int frameSize = width * height;
 
-        int sum=0;
+        /*int sum=0;
         int sumr = 0;
         int sumg = 0;
         int sumb = 0;
@@ -441,6 +519,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
                 int g = (y1192 - 833 * v - 400 * u);
                 int b = (y1192 + 2066 * u);
 
+                Log.i(TAG, "r: " + r + "b " + b + "g " + g);
                 if (r < 0) r = 0;
                 else if (r > 262143) r = 262143;
                 if (g < 0) g = 0;
@@ -465,7 +544,11 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             case (3): sum = sumg;
                 break;
         }
-        return sum;
+        return sum;*/
+
+
+
+        return 0;
     }
 
 
@@ -498,5 +581,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             e.printStackTrace();
         }
     }
+
+    //onpause etc blitz anpassen
 
 }
