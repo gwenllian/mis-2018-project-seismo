@@ -81,7 +81,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             ay=sensorEvent.values[1];
             az=sensorEvent.values[2];
 
-            final float alpha = 0.5f;
+            final float alpha = 0.3f;
 
             gravity[0] = alpha * gravity[0] + (1 - alpha) * sensorEvent.values[0];
             gravity[1] = alpha * gravity[1] + (1 - alpha) * sensorEvent.values[1];
@@ -162,8 +162,8 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     int redMean;
     int greenMean;
     private static double currentCamX;
-
-    private LineGraphSeries<DataPoint> camSeries;
+    private LineGraphSeries<DataPoint> redSeries;
+    private LineGraphSeries<DataPoint> greenSeries;
 
     //später felder für rot und grün!!!
 
@@ -203,10 +203,35 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         sensorManager=(SensorManager) getSystemService(SENSOR_SERVICE);
         sensorManager.registerListener(this, sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER), SensorManager.SENSOR_DELAY_NORMAL);
         GraphView graph = (GraphView) findViewById(R.id.graph);
+        GraphView camGraph = (GraphView) findViewById(R.id.camgraph);
+
+        redSeries = new LineGraphSeries<>();
+        redSeries.setColor(Color.RED);
+        greenSeries = new LineGraphSeries<>();
+        greenSeries.setColor(Color.GREEN);
+        camGraph.addSeries(redSeries);
+        camGraph.addSeries(greenSeries);
+
+        camGraph.getGridLabelRenderer().setGridStyle(GridLabelRenderer.GridStyle.NONE);
+        camGraph.getGridLabelRenderer().setHorizontalLabelsVisible(false);
+        camGraph.getGridLabelRenderer().setVerticalLabelsVisible(false);
+
+        camGraph.getViewport().setScalable(false);
+        camGraph.getViewport().setScrollable(false);
+        camGraph.getViewport().setXAxisBoundsManual(true);
+        camGraph.getViewport().setMinX(0);
+        camGraph.getViewport().setMaxX(10);
+        camGraph.getViewport().setYAxisBoundsManual(true);
+        camGraph.getViewport().setMinY(-255);
+        camGraph.getViewport().setMaxY(255);
+
+        currentCamX = 0.0;
+
 
         series = new LineGraphSeries<>();
-        series.setColor(Color.RED);
+        series.setColor(Color.MAGENTA);
         graph.addSeries(series);
+
 
         // https://stackoverflow.com/a/36400198
         graph.getGridLabelRenderer().setGridStyle(GridLabelRenderer.GridStyle.NONE);
@@ -349,8 +374,6 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
                 public void onImageAvailable(ImageReader reader) {
                     // FOR EVERY FRAME DO:
                     Image image = reader.acquireLatestImage();
-
-                    Log.i(TAG, "img " + image.getHeight());
                     if (image == null)
                         return;
                     Image.Plane Y = image.getPlanes()[0];
@@ -367,24 +390,20 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
                     U.getBuffer().get(buffer, Yb, Ub);
                     V.getBuffer().get(buffer, Yb + Ub , Vb);
 
-                    Log.i(TAG, "buf " + buffer.length);
+                    // Log.i(TAG, "buf " + buffer.length);
 
                     //double avg = decodeYUV420toRGBAvg(buffer.clone(),mPreviewSize.getHeight(),mPreviewSize.getWidth(),1);
 
                     //Log.e(TAG,""+avg);
 
-                    Type.Builder yuvType = new Type.Builder(rs, Element.U8(rs)).setX(buffer.length);
-                    Allocation in = Allocation.createTyped(rs, yuvType.create(), Allocation.USAGE_SCRIPT);
+                    Bitmap bmp = Bitmap.createBitmap(image.getWidth(), image.getHeight(), Bitmap.Config.ARGB_8888);
+                    Allocation bmData = renderScriptNV21ToRGBA888(
+                            getApplicationContext(),
+                            image.getWidth(),
+                            image.getHeight(),
+                            buffer);
+                    bmData.copyTo(bmp);
 
-                    Type.Builder rgbaType = new Type.Builder(rs, Element.RGBA_8888(rs)).setX(mPreviewSize.getWidth()).setY(mPreviewSize.getHeight());
-                    Allocation out = Allocation.createTyped(rs, rgbaType.create(), Allocation.USAGE_SCRIPT);
-
-                    in.copyFrom(buffer);
-
-                    si.setInput(in);
-                    si.forEach(out);
-
-                    Bitmap bmp = Bitmap.createBitmap(mPreviewSize.getWidth(), mPreviewSize.getHeight(), Bitmap.Config.ARGB_8888);
                     int rgba[] = new int[mPreviewSize.getWidth()*mPreviewSize.getHeight()];   // the rgba[] array
 
                     bmp.getPixels(rgba, 0, mPreviewSize.getWidth(), 0, 0, mPreviewSize.getWidth(), mPreviewSize.getHeight());
@@ -393,26 +412,23 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
 
                     int sumR = 0;
                     int sumG = 0;
-
-                    int r[] = new int[rgba.length/4];
-                    int g[] = new int[rgba.length/4];
-                    int b[] = new int[rgba.length/4];
-
-                    for (int i = 0; i < r.length; i++){
-                        r[i] = rgba[i*4];
-                        sumR += rgba[i*4];
-                        g[i] = rgba[i*4+1];
-                        sumG += rgba[i*4 +1];
-                        b[i] = rgba[i*4+2];
+//
+//                    int r[] = new int[rgba.length];
+//                    int g[] = new int[rgba.length];
+//
+                    // https://stackoverflow.com/a/13583925
+                    for (int p : rgba) {
+                        sumR += (p >> 16) & 0xff;
+                        sumG += (p >> 8) & 0xff;
                     }
 
-                    Log.i(TAG, "r" + r.length + g.length + b.length);
+                    redMean = sumR/rgba.length;
+                    greenMean = sumG/rgba.length;
 
-                    redMean = sumR/r.length;
-                    greenMean = sumG/g.length;
-
+                    redSeries.appendData(new DataPoint(currentCamX,redMean), true, 10);
+                    greenSeries.appendData(new DataPoint(currentCamX,greenMean), true, 10);
                     Log.i(TAG, "r "+ redMean + " g " + greenMean);
-
+                    currentCamX++;
                     image.close();
                 }
             };
@@ -496,69 +512,20 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
 
 
     // IMAGE PROCESSING
-    // temporary: https://github.com/YahyaOdeh/HealthWatcher
-    private static int decodeYUV420toRGBSum(byte[] yuv420sp, int width, int height, int type) {
+    // https://stackoverflow.com/questions/11761147/get-rgb-data-from-the-android-camera-in-stream
+    public Allocation renderScriptNV21ToRGBA888(Context context, int width, int height, byte[] nv21) {
 
-        final int frameSize = width * height;
+        Type.Builder yuvType = new Type.Builder(rs, Element.U8(rs)).setX(nv21.length);
+        Allocation in = Allocation.createTyped(rs, yuvType.create(), Allocation.USAGE_SCRIPT);
 
-        /*int sum=0;
-        int sumr = 0;
-        int sumg = 0;
-        int sumb = 0;
-        for (int j = 0, yp = 0; j < height; j++) {
-            int uvp = frameSize + (j >> 1) * width, u = 0, v = 0;
-            for (int i = 0; i < width; i++, yp++) {
-                int y = (0xff & yuv420sp[yp]) - 16;
-                if (y < 0) y = 0;
-                if ((i & 1) == 0) {
-                    v = (0xff & yuv420sp[uvp++]) - 128;
-                    u = (0xff & yuv420sp[uvp++]) - 128;
-                }
-                int y1192 = 1192 * y;
-                int r = (y1192 + 1634 * v);
-                int g = (y1192 - 833 * v - 400 * u);
-                int b = (y1192 + 2066 * u);
+        Type.Builder rgbaType = new Type.Builder(rs, Element.RGBA_8888(rs)).setX(width).setY(height);
+        Allocation out = Allocation.createTyped(rs, rgbaType.create(), Allocation.USAGE_SCRIPT);
 
-                Log.i(TAG, "r: " + r + "b " + b + "g " + g);
-                if (r < 0) r = 0;
-                else if (r > 262143) r = 262143;
-                if (g < 0) g = 0;
-                else if (g > 262143) g = 262143;
-                if (b < 0) b = 0;
-                else if (b > 262143) b = 262143;
+        in.copyFrom(nv21);
 
-                int pixel = 0xff000000 | ((r << 6) & 0xff0000) | ((g >> 2) & 0xff00) | ((b >> 10) & 0xff);
-                int red = (pixel >> 16) & 0xff;
-                int green = (pixel >> 8) & 0xff;
-                int blue = pixel&0xff;
-                sumr += red;
-                sumg += green;
-                sumb += blue;
-            }
-        }
-        switch(type){
-            case (1): sum = sumr;
-                break;
-            case (2): sum = sumb;
-                break;
-            case (3): sum = sumg;
-                break;
-        }
-        return sum;*/
-
-
-
-        return 0;
-    }
-
-
-    public static double decodeYUV420toRGBAvg(byte[] yuv420sp, int width, int height, int type) {
-        final int frameSize = width * height;
-
-        int sum = decodeYUV420toRGBSum(yuv420sp, width, height, type);
-        int mean = (sum / frameSize);
-
-        return mean;
+        si.setInput(in);
+        si.forEach(out);
+        return out;
     }
 
     public void turnOnFlash() {

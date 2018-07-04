@@ -10,7 +10,7 @@
     <com.jjoe64.graphview.GraphView
         android:id="@+id/graph"
         android:layout_width="384dp"
-        android:layout_height="30dp"
+        android:layout_height="78dp"
         android:layout_marginBottom="42dp"
         android:layout_marginTop="40dp"
         app:layout_constraintBottom_toTopOf="@+id/texture"
@@ -35,7 +35,7 @@
     <com.jjoe64.graphview.GraphView
         android:id="@+id/camgraph"
         android:layout_width="384dp"
-        android:layout_height="30dp"
+        android:layout_height="55dp"
         android:layout_marginBottom="195dp"
         android:layout_marginTop="40dp"
         app:layout_constraintBottom_toBottomOf="parent"
