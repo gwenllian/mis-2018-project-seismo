@@ -45,5 +45,11 @@
         tools:layout_constraintTop_toBottomOf="@+id/texture"
         tools:layout_marginTop="40dp" />
 
+    <Button
+        android:id="@+id/start"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="@string/start"/>
+
 
 </android.support.constraint.ConstraintLayout>

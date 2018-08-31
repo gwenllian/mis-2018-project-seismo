@@ -167,6 +167,9 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
 
     //später felder für rot und grün!!!
 
+    private Button mStartButton;
+    private long time;
+    long wait = 30000;
 
     public MainActivity() {
         Log.i(TAG, "Instantiated new " + this.getClass());
@@ -182,7 +185,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
 
         if (!isFlashAvailable) {
 
-            Toast.makeText(MainActivity.this, "Sorry this app needs to use flash", Toast.LENGTH_LONG).show();
+            Toast.makeText(MainActivity.this, "Sorry this app needs to use the flash", Toast.LENGTH_LONG).show();
             finish();
             return;
         }
@@ -190,9 +193,22 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         rs = RenderScript.create(this);
         si = ScriptIntrinsicYuvToRGB.create(rs, Element.U8_4(rs));
 
-
-
-
+        mStartButton = (Button) findViewById(R.id.start);
+        //mStartButton.setVisibility(View.VISIBLE);
+        mStartButton.setOnClickListener(new View.OnClickListener() {
+                                            public void onClick(View v) {
+                                                //mStartButton.setVisibility(View.GONE);
+                                                long current;
+                                                long elapsedTime = 0;
+                                                time = System.currentTimeMillis();
+                                                do {
+                                                    current = System.currentTimeMillis();
+                                                    elapsedTime = current - time;
+                                                }
+                                                while (elapsedTime < wait);
+                                                Toast.makeText(MainActivity.this, "times up", Toast.LENGTH_LONG).show();
+                                            }});
+        
         mCameraManager = (CameraManager) getSystemService(Context.CAMERA_SERVICE);
         try {
             mCameraId = mCameraManager.getCameraIdList()[0];
