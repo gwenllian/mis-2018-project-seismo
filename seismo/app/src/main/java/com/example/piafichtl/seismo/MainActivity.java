@@ -27,11 +27,13 @@ import android.renderscript.Element;
 import android.renderscript.RenderScript;
 import android.renderscript.ScriptIntrinsicYuvToRGB;
 import android.renderscript.Type;
+import android.support.annotation.ColorInt;
 import android.support.annotation.NonNull;
 import android.support.v4.app.ActivityCompat;
 import android.support.v7.app.AppCompatActivity;
 import android.os.Bundle;
 import android.util.Log;
+import android.util.Pair;
 import android.util.Size;
 import android.util.SparseIntArray;
 import android.view.Surface;
@@ -54,6 +56,7 @@ import java.io.OutputStream;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Vector;
 
 import static android.support.v4.math.MathUtils.clamp;
 import static java.lang.Math.pow;
@@ -62,20 +65,32 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
 
     private static final String TAG = "MainActivity";
 
+    Vector<Pair> redValues = new Vector<>();
+    Vector<Pair> greenValues = new Vector<>();
+    Pair<Long, Integer> red;
+    Pair<Long, Integer> green;
+
     public class CountDownTimerMeasurement extends CountDownTimer {
+        long timer;
         public CountDownTimerMeasurement(long startTime, long interval) {
             super(startTime, interval);
+            timer = startTime;
         }
 
         @Override
         public void onFinish() {
             Toast.makeText(MainActivity.this, "Time's up!", Toast.LENGTH_LONG).show();
+            Log.i(TAG, "RED" + redValues.toString());
 
         }
 
         @Override
         public void onTick(long millisUntilFinished) {
             Log.i(TAG,"Time remain:" + millisUntilFinished);
+            red = new Pair<>(timer - millisUntilFinished, redMean);
+            green = new Pair<>(timer - millisUntilFinished, greenMean);
+            redValues.add(red);
+            greenValues.add(green);
         }
     }
 
@@ -183,8 +198,6 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     private LineGraphSeries<DataPoint> redSeries;
     private LineGraphSeries<DataPoint> greenSeries;
 
-    //später felder für rot und grün!!!
-
     private Button mStartButton;
     boolean measuring = false;
     long startingTime;
@@ -257,11 +270,9 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
 
         currentCamX = 0.0;
 
-
         series = new LineGraphSeries<>();
         series.setColor(Color.MAGENTA);
         graph.addSeries(series);
-
 
         // https://stackoverflow.com/a/36400198
         graph.getGridLabelRenderer().setGridStyle(GridLabelRenderer.GridStyle.NONE);
@@ -428,11 +439,17 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
                             buffer);
                     bmData.copyTo(bmp);
 
+
                     int rgba[] = new int[mPreviewSize.getWidth()*mPreviewSize.getHeight()];   // the rgba[] array
 
                     bmp.getPixels(rgba, 0, mPreviewSize.getWidth(), 0, 0, mPreviewSize.getWidth(), mPreviewSize.getHeight());
 
+
+
                     Log.i(TAG, "rgb" + rgba.length);
+
+                    //@ColorInt int[] argbPixels = new int[bmp.getHeight()*bmp.getWidth()];
+                    //bmp.getPixels(argbPixels, 0, bmp.getWidth(), 0, 0, bmp.getWidth(), bmp.getHeight());
 
                     int sumR = 0;
                     int sumG = 0;
@@ -441,14 +458,36 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
 //                    int g[] = new int[rgba.length];
 //
                     // https://stackoverflow.com/a/13583925
-                    for (int p : rgba) {
-                        sumR += (p >> 16) & 0xff;
-                        sumG += (p >> 8) & 0xff;
+                    /*for (int p = 0; p < bmp.getWidth()*bmp.getHeight(); p++) {
+                        @ColorInt int argbPixel = argbPixels[p];
+
+                        int red = Color.red(argbPixel);
+                        int green = Color.green(argbPixel);
+
+                        Log.i(TAG, "red current" + red + "green current " + green);
+                        sumR += red;
+                        sumG += green;
+
+                        //int R = (p & 0xff0000) >> 16;
+                        //int G = (p & 0x00ff00) >> 8;
+                        //sumR += R;
+                        //sumG += G;
+                        //sumR += (p >> 16) & 0xff;
+                        //sumG += (p >> 8) & 0xff;
+                    }*/
+
+                    for (int p : rgba){
+                        int red = Color.red(p);
+                        int green = Color.green(p);
+                        //Log.i(TAG, "red current" + red + "green current " + green);
+
+                        sumR += red;
+                        sumG += green;
+
                     }
 
                     redMean = sumR/rgba.length;
                     greenMean = sumG/rgba.length;
-
 
                     redSeries.appendData(new DataPoint(currentCamX,redMean), true, 10);
                     greenSeries.appendData(new DataPoint(currentCamX,greenMean), true, 10);
