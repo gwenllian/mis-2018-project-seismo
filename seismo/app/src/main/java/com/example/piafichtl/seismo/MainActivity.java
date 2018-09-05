@@ -407,8 +407,6 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         Log.e(TAG, "is camera open");
         // Added ImageReader handling to capture every single frame
 
-
-
         try {
             ImageReader.OnImageAvailableListener mImageAvailable = new ImageReader.OnImageAvailableListener() {
                 @Override
@@ -439,14 +437,9 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
                             buffer);
                     bmData.copyTo(bmp);
 
-
                     int rgba[] = new int[mPreviewSize.getWidth()*mPreviewSize.getHeight()];   // the rgba[] array
 
                     bmp.getPixels(rgba, 0, mPreviewSize.getWidth(), 0, 0, mPreviewSize.getWidth(), mPreviewSize.getHeight());
-
-
-
-                    Log.i(TAG, "rgb" + rgba.length);
 
                     //@ColorInt int[] argbPixels = new int[bmp.getHeight()*bmp.getWidth()];
                     //bmp.getPixels(argbPixels, 0, bmp.getWidth(), 0, 0, bmp.getWidth(), bmp.getHeight());
@@ -475,6 +468,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
                         //sumR += (p >> 16) & 0xff;
                         //sumG += (p >> 8) & 0xff;
                     }*/
+                    int counter = 0;
 
                     for (int p : rgba){
                         int red = Color.red(p);
@@ -483,7 +477,6 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
 
                         sumR += red;
                         sumG += green;
-
                     }
 
                     redMean = sumR/rgba.length;
