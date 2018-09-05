@@ -18,6 +18,7 @@ import android.hardware.camera2.params.StreamConfigurationMap;
 import android.media.Image;
 import android.media.ImageReader;
 import android.os.Build;
+import android.os.CountDownTimer;
 import android.os.Environment;
 import android.os.Handler;
 import android.os.HandlerThread;
@@ -60,6 +61,23 @@ import static java.lang.Math.pow;
 public class MainActivity extends AppCompatActivity implements SensorEventListener {
 
     private static final String TAG = "MainActivity";
+
+    public class CountDownTimerMeasurement extends CountDownTimer {
+        public CountDownTimerMeasurement(long startTime, long interval) {
+            super(startTime, interval);
+        }
+
+        @Override
+        public void onFinish() {
+            Toast.makeText(MainActivity.this, "Time's up!", Toast.LENGTH_LONG).show();
+
+        }
+
+        @Override
+        public void onTick(long millisUntilFinished) {
+            Log.i(TAG,"Time remain:" + millisUntilFinished);
+        }
+    }
 
     ///////////////////////////////////////
     // ACCELEROMETER
@@ -168,8 +186,8 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     //später felder für rot und grün!!!
 
     private Button mStartButton;
-    private long time;
-    long wait = 30000;
+    boolean measuring = false;
+    long startingTime;
 
     public MainActivity() {
         Log.i(TAG, "Instantiated new " + this.getClass());
@@ -198,15 +216,11 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         mStartButton.setOnClickListener(new View.OnClickListener() {
                                             public void onClick(View v) {
                                                 //mStartButton.setVisibility(View.GONE);
-                                                long current;
-                                                long elapsedTime = 0;
-                                                time = System.currentTimeMillis();
-                                                do {
-                                                    current = System.currentTimeMillis();
-                                                    elapsedTime = current - time;
-                                                }
-                                                while (elapsedTime < wait);
-                                                Toast.makeText(MainActivity.this, "times up", Toast.LENGTH_LONG).show();
+                                                startingTime = System.currentTimeMillis();
+                                                measuring = true;
+                                                CountDownTimerMeasurement timer = new CountDownTimerMeasurement(10000,1000);
+                                                timer.start();
+                                                Toast.makeText(MainActivity.this, "Starting preparations", Toast.LENGTH_LONG).show();
                                             }});
         
         mCameraManager = (CameraManager) getSystemService(Context.CAMERA_SERVICE);
@@ -406,12 +420,6 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
                     U.getBuffer().get(buffer, Yb, Ub);
                     V.getBuffer().get(buffer, Yb + Ub , Vb);
 
-                    // Log.i(TAG, "buf " + buffer.length);
-
-                    //double avg = decodeYUV420toRGBAvg(buffer.clone(),mPreviewSize.getHeight(),mPreviewSize.getWidth(),1);
-
-                    //Log.e(TAG,""+avg);
-
                     Bitmap bmp = Bitmap.createBitmap(image.getWidth(), image.getHeight(), Bitmap.Config.ARGB_8888);
                     Allocation bmData = renderScriptNV21ToRGBA888(
                             getApplicationContext(),
@@ -441,9 +449,10 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
                     redMean = sumR/rgba.length;
                     greenMean = sumG/rgba.length;
 
+
                     redSeries.appendData(new DataPoint(currentCamX,redMean), true, 10);
                     greenSeries.appendData(new DataPoint(currentCamX,greenMean), true, 10);
-                    Log.i(TAG, "r "+ redMean + " g " + greenMean);
+                    Log.i(TAG, "r "+ redMean + " g " + greenMean + " saved: " + measuring);
                     currentCamX++;
                     image.close();
                 }
