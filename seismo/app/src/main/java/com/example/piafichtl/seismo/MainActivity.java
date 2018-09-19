@@ -67,8 +67,10 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
 
     Vector<Pair> redValues = new Vector<>();
     Vector<Pair> greenValues = new Vector<>();
+    Vector<Pair> accelValues = new Vector<>();
     Pair<Long, Integer> red;
     Pair<Long, Integer> green;
+    Pair<Long, Integer> accel;
 
     public class CountDownTimerMeasurement extends CountDownTimer {
         long timer;
@@ -89,8 +91,10 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             Log.i(TAG,"Time remain:" + millisUntilFinished);
             red = new Pair<>(timer - millisUntilFinished, redMean);
             green = new Pair<>(timer - millisUntilFinished, greenMean);
+            accel = new Pair<>(timer - millisUntilFinished, currentAcceleration);
             redValues.add(red);
             greenValues.add(green);
+            accelValues.add(accel);
         }
     }
 
@@ -102,6 +106,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     private LineGraphSeries<DataPoint> series;
     private static double currentX;
     double ax,ay,az;
+    int currentAcceleration;
     float lastAcceleration[] = new float[3];
     float accelFilter[] = new float[3];
     float gravity[] = new float[3];
@@ -124,7 +129,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             accelFilter[1] = sensorEvent.values[1] - gravity[1];
             accelFilter[2] = sensorEvent.values[2] - gravity[2];
 
-            /*float updateFreq = 30;
+            /*float updateFreq = 30;Timer
             float cutOffFreq = 0.9f;
             float RC = 1.0f / cutOffFreq;
             float dt = 1.0f / updateFreq;
@@ -146,6 +151,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             lastAcceleration[2] = (float)az;*/
 
         }
+        currentAcceleration = (int) accelFilter[1];
         series.appendData(new DataPoint(currentX,accelFilter[1]), true, 200);
         currentX++;
     }
@@ -231,9 +237,9 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
                                                 //mStartButton.setVisibility(View.GONE);
                                                 startingTime = System.currentTimeMillis();
                                                 measuring = true;
-                                                CountDownTimerMeasurement timer = new CountDownTimerMeasurement(10000,1000);
+                                                CountDownTimerMeasurement timer = new CountDownTimerMeasurement(10000,100);
                                                 timer.start();
-                                                Toast.makeText(MainActivity.this, "Starting preparations", Toast.LENGTH_LONG).show();
+                                                Toast.makeText(MainActivity.this, "Starting measurement", Toast.LENGTH_LONG).show();
                                             }});
         
         mCameraManager = (CameraManager) getSystemService(Context.CAMERA_SERVICE);
@@ -468,7 +474,6 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
                         //sumR += (p >> 16) & 0xff;
                         //sumG += (p >> 8) & 0xff;
                     }*/
-                    int counter = 0;
 
                     for (int p : rgba){
                         int red = Color.red(p);
