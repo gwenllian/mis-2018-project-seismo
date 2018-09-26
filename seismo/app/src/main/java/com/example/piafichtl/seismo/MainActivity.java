@@ -68,8 +68,8 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     Vector<Pair> redValues = new Vector<>();
     Vector<Pair> greenValues = new Vector<>();
     Vector<Pair> accelValues = new Vector<>();
-    Pair<Long, Integer> red;
-    Pair<Long, Integer> green;
+    Pair<Long, Long> red;
+    Pair<Long, Long> green;
     Pair<Long, Integer> accel;
 
     public class CountDownTimerMeasurement extends CountDownTimer {
@@ -88,7 +88,6 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
 
         @Override
         public void onTick(long millisUntilFinished) {
-            Log.i(TAG,"Time remain:" + millisUntilFinished);
             red = new Pair<>(timer - millisUntilFinished, redMean);
             green = new Pair<>(timer - millisUntilFinished, greenMean);
             accel = new Pair<>(timer - millisUntilFinished, currentAcceleration);
@@ -198,8 +197,8 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     RenderScript rs;
     ScriptIntrinsicYuvToRGB si;
 
-    int redMean;
-    int greenMean;
+    long redMean;
+    long greenMean;
     private static double currentCamX;
     private LineGraphSeries<DataPoint> redSeries;
     private LineGraphSeries<DataPoint> greenSeries;
@@ -431,9 +430,10 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
 
                     byte[] buffer = new byte[Yb + Ub + Vb];
 
+
                     Y.getBuffer().get(buffer, 0, Yb);
-                    U.getBuffer().get(buffer, Yb, Ub);
-                    V.getBuffer().get(buffer, Yb + Ub , Vb);
+                    U.getBuffer().get(buffer, Yb + Vb, Ub);
+                    V.getBuffer().get(buffer, Yb, Vb);
 
                     Bitmap bmp = Bitmap.createBitmap(image.getWidth(), image.getHeight(), Bitmap.Config.ARGB_8888);
                     Allocation bmData = renderScriptNV21ToRGBA888(
@@ -447,38 +447,11 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
 
                     bmp.getPixels(rgba, 0, mPreviewSize.getWidth(), 0, 0, mPreviewSize.getWidth(), mPreviewSize.getHeight());
 
-                    //@ColorInt int[] argbPixels = new int[bmp.getHeight()*bmp.getWidth()];
-                    //bmp.getPixels(argbPixels, 0, bmp.getWidth(), 0, 0, bmp.getWidth(), bmp.getHeight());
-
-                    int sumR = 0;
-                    int sumG = 0;
-//
-//                    int r[] = new int[rgba.length];
-//                    int g[] = new int[rgba.length];
-//
-                    // https://stackoverflow.com/a/13583925
-                    /*for (int p = 0; p < bmp.getWidth()*bmp.getHeight(); p++) {
-                        @ColorInt int argbPixel = argbPixels[p];
-
-                        int red = Color.red(argbPixel);
-                        int green = Color.green(argbPixel);
-
-                        Log.i(TAG, "red current" + red + "green current " + green);
-                        sumR += red;
-                        sumG += green;
-
-                        //int R = (p & 0xff0000) >> 16;
-                        //int G = (p & 0x00ff00) >> 8;
-                        //sumR += R;
-                        //sumG += G;
-                        //sumR += (p >> 16) & 0xff;
-                        //sumG += (p >> 8) & 0xff;
-                    }*/
-
+                    long sumR = 0;
+                    long sumG = 0;
                     for (int p : rgba){
                         int red = Color.red(p);
                         int green = Color.green(p);
-                        //Log.i(TAG, "red current" + red + "green current " + green);
 
                         sumR += red;
                         sumG += green;
@@ -489,7 +462,6 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
 
                     redSeries.appendData(new DataPoint(currentCamX,redMean), true, 10);
                     greenSeries.appendData(new DataPoint(currentCamX,greenMean), true, 10);
-                    Log.i(TAG, "r "+ redMean + " g " + greenMean + " saved: " + measuring);
                     currentCamX++;
                     image.close();
                 }
