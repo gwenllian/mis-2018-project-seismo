@@ -70,7 +70,28 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     Vector<Pair> accelValues = new Vector<>();
     Pair<Long, Long> red;
     Pair<Long, Long> green;
-    Pair<Long, Integer> accel;
+    Pair<Long, Float> accel;
+
+    public void calculateBloodPressure() {
+        // iterate red values and check if the value rises or not
+        Vector<Long> fingerPulses = new Vector<>();
+        long lastValue = 0;
+        for (Pair<Long,Long> r : redValues) {
+            if (r.second > lastValue) {
+                // save only times where value increases
+                fingerPulses.add(r.first);
+                lastValue = r.second;
+            } else if (r.second < lastValue) {
+                lastValue = r.second;
+            }
+        }
+        // get acceleration maximums
+        // (the acceleration shows a jump from a minimum to maximum with a heart beat)
+        // compare values to acceleration maximums and stabilize result
+        // calculate time interval from one maximum to its corresponding finger pulse
+        Log.i(TAG,fingerPulses.toString());
+
+    }
 
     public class CountDownTimerMeasurement extends CountDownTimer {
         long timer;
@@ -82,7 +103,10 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         @Override
         public void onFinish() {
             Toast.makeText(MainActivity.this, "Time's up!", Toast.LENGTH_LONG).show();
-            Log.i(TAG, "RED" + redValues.toString());
+            Log.i(TAG, "RED VALUE MEASUREMENT [" + redValues.size() + "]\n" + redValues.toString());
+            Log.i(TAG, "\nGREEN VALUE MEASUREMENT [" + greenValues.size() + "]\n" + greenValues.toString());
+            Log.i(TAG, "\nACCELERATION VALUE MEASUREMENT [" + accelValues.size() + "]\n" + accelValues.toString());
+            calculateBloodPressure();
 
         }
 
@@ -105,7 +129,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     private LineGraphSeries<DataPoint> series;
     private static double currentX;
     double ax,ay,az;
-    int currentAcceleration;
+    float currentAcceleration;
     float lastAcceleration[] = new float[3];
     float accelFilter[] = new float[3];
     float gravity[] = new float[3];
@@ -150,7 +174,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             lastAcceleration[2] = (float)az;*/
 
         }
-        currentAcceleration = (int) accelFilter[1];
+        currentAcceleration = accelFilter[1];
         series.appendData(new DataPoint(currentX,accelFilter[1]), true, 200);
         currentX++;
     }
