@@ -85,11 +85,25 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
                 lastValue = r.second;
             }
         }
+        Vector<Float> accelerationPeaks = new Vector<>();
+        // slope detection https://stackoverflow.com/a/12250567
+        float previous = 0;
+        float previousSlope = 0;
+
+        for (Pair<Long, Float> a : accelValues) {
+            float slope = a.second - previous;
+            if (slope * previousSlope < 0) { //look for sign changes
+                accelerationPeaks.add(previous);
+            }
+            previousSlope = slope;
+            previous = a.second;
+        }
         // get acceleration maximums
         // (the acceleration shows a jump from a minimum to maximum with a heart beat)
         // compare values to acceleration maximums and stabilize result
         // calculate time interval from one maximum to its corresponding finger pulse
         Log.i(TAG,fingerPulses.toString());
+        Log.i(TAG,accelerationPeaks.toString());
 
     }
 
@@ -260,7 +274,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
                                                 //mStartButton.setVisibility(View.GONE);
                                                 startingTime = System.currentTimeMillis();
                                                 measuring = true;
-                                                CountDownTimerMeasurement timer = new CountDownTimerMeasurement(10000,100);
+                                                CountDownTimerMeasurement timer = new CountDownTimerMeasurement(10000,10);
                                                 timer.start();
                                                 Toast.makeText(MainActivity.this, "Starting measurement", Toast.LENGTH_LONG).show();
                                             }});
