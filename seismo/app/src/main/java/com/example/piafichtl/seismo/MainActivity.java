@@ -6,9 +6,7 @@ import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.graphics.Color;
 import android.graphics.ImageFormat;
-import android.graphics.Rect;
 import android.graphics.SurfaceTexture;
-import android.graphics.YuvImage;
 import android.hardware.Sensor;
 import android.hardware.SensorEvent;
 import android.hardware.SensorEventListener;
@@ -19,7 +17,6 @@ import android.media.Image;
 import android.media.ImageReader;
 import android.os.Build;
 import android.os.CountDownTimer;
-import android.os.Environment;
 import android.os.Handler;
 import android.os.HandlerThread;
 import android.renderscript.Allocation;
@@ -27,7 +24,6 @@ import android.renderscript.Element;
 import android.renderscript.RenderScript;
 import android.renderscript.ScriptIntrinsicYuvToRGB;
 import android.renderscript.Type;
-import android.support.annotation.ColorInt;
 import android.support.annotation.NonNull;
 import android.support.v4.app.ActivityCompat;
 import android.support.v7.app.AppCompatActivity;
@@ -47,19 +43,12 @@ import com.jjoe64.graphview.GridLabelRenderer;
 import com.jjoe64.graphview.series.DataPoint;
 import com.jjoe64.graphview.series.LineGraphSeries;
 
-import java.io.ByteArrayOutputStream;
 import java.io.File;
-import java.io.FileNotFoundException;
-import java.io.FileOutputStream;
-import java.io.IOException;
-import java.io.OutputStream;
-import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Vector;
 
 import static android.support.v4.math.MathUtils.clamp;
-import static java.lang.Math.pow;
 
 public class MainActivity extends AppCompatActivity implements SensorEventListener {
 
@@ -86,18 +75,10 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             }
         }
         Vector<Float> accelerationPeaks = new Vector<>();
-        // slope detection https://stackoverflow.com/a/12250567
-        float previous = 0;
-        float previousSlope = 0;
 
-        for (Pair<Long, Float> a : accelValues) {
-            float slope = a.second - previous;
-            if (slope * previousSlope < 0) { //look for sign changes
-                accelerationPeaks.add(previous);
-            }
-            previousSlope = slope;
-            previous = a.second;
-        }
+        // smoothed z-score algorithm https://stackoverflow.com/a/48772305
+
+
         // get acceleration maximums
         // (the acceleration shows a jump from a minimum to maximum with a heart beat)
         // compare values to acceleration maximums and stabilize result
@@ -140,13 +121,17 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     // https://stackoverflow.com/a/8101144
     // https://stackoverflow.com/a/8323572
     private SensorManager sensorManager;
-    private LineGraphSeries<DataPoint> series;
-    private static double currentX;
+    private LineGraphSeries<DataPoint> rawAccelSeries;
+    private LineGraphSeries<DataPoint> filteredAccelSeries;
+    private LineGraphSeries<DataPoint> smoothedAccelSeries;
+    private static double currentAccelX;
     double ax,ay,az;
     float currentAcceleration;
     float lastAcceleration[] = new float[3];
-    float accelFilter[] = new float[3];
-    float gravity[] = new float[3];
+    float accelFilterA[] = new float[3];
+    float accelFilterB[] = new float[3];
+    float gravityA[] = new float[3];
+    float gravityB[] = new float[3];
 
 
     @Override
@@ -156,45 +141,30 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             ay=sensorEvent.values[1];
             az=sensorEvent.values[2];
 
-            final float alpha = 0.3f;
+            final float alpha = 0.15f;
+            final float beta = 0.005f;
 
-            gravity[0] = alpha * gravity[0] + (1 - alpha) * sensorEvent.values[0];
-            gravity[1] = alpha * gravity[1] + (1 - alpha) * sensorEvent.values[1];
-            gravity[2] = alpha * gravity[2] + (1 - alpha) * sensorEvent.values[2];
+            gravityA[0] = alpha * gravityA[0] + (1 - alpha) * sensorEvent.values[0];
+            gravityA[1] = alpha * gravityA[1] + (1 - alpha) * sensorEvent.values[1];
+            gravityA[2] = alpha * gravityA[2] + (1 - alpha) * sensorEvent.values[2];
 
-            accelFilter[0] = sensorEvent.values[0] - gravity[0];
-            accelFilter[1] = sensorEvent.values[1] - gravity[1];
-            accelFilter[2] = sensorEvent.values[2] - gravity[2];
+            accelFilterA[0] = sensorEvent.values[0] - gravityA[0];
+            accelFilterA[1] = sensorEvent.values[1] - gravityA[1];
+            accelFilterA[2] = sensorEvent.values[2] - gravityA[2];
 
-            /*float updateFreq = 30;Timer
-            float cutOffFreq = 0.9f;
-            float RC = 1.0f / cutOffFreq;
-            float dt = 1.0f / updateFreq;
-            float filterConstant = RC / (dt + RC);
-            float alpha = filterConstant;
-            float kAccelerometerMinStep = 0.033f;
-            float kAccelerometerNoiseAttenuation = 3.0f;
+            gravityB[0] = beta * gravityB[0] + (1 - beta) * sensorEvent.values[0];
+            gravityB[1] = beta * gravityB[1] + (1 - beta) * sensorEvent.values[1];
+            gravityB[2] = beta * gravityB[2] + (1 - beta) * sensorEvent.values[2];
 
-
-            float d = clamp(Math.abs(norm(accelFilter[0], accelFilter[1], accelFilter[2]) - norm(ax, ay, az)) / kAccelerometerMinStep - 1.0f, 0.0f, 1.0f);
-            alpha = d * filterConstant / kAccelerometerNoiseAttenuation + (1.0f - d) * filterConstant;
-
-            accelFilter[0] = (float) (alpha * (accelFilter[0] + ax - lastAcceleration[0]));
-            accelFilter[1] = (float) (alpha * (accelFilter[1] + ay - lastAcceleration[1]));
-            accelFilter[2] = (float) (alpha * (accelFilter[2] + az - lastAcceleration[2]));
-
-            lastAcceleration[0] = (float)ax;
-            lastAcceleration[1] = (float)ay;
-            lastAcceleration[2] = (float)az;*/
-
+            accelFilterB[0] = sensorEvent.values[0] - gravityB[0];
+            accelFilterB[1] = sensorEvent.values[1] - gravityB[1];
+            accelFilterB[2] = sensorEvent.values[2] - gravityB[2];
         }
-        currentAcceleration = accelFilter[1];
-        series.appendData(new DataPoint(currentX,accelFilter[1]), true, 200);
-        currentX++;
-    }
-
-    public float norm(double a, double b, double c) {
-        return (float)Math.sqrt(pow(a,2)+pow(b,2)+pow(c,2));
+        currentAcceleration = accelFilterA[1];
+        rawAccelSeries.appendData(new DataPoint(currentAccelX,(float)ay), true, 200);
+        filteredAccelSeries.appendData(new DataPoint(currentAccelX,currentAcceleration), true, 200);
+        smoothedAccelSeries.appendData(new DataPoint(currentAccelX,accelFilterB[1]), true, 200);
+        currentAccelX++;
     }
 
 
@@ -214,7 +184,6 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     private CameraDevice mCameraDevice;
     private Size mPreviewSize;
 
-    private Button mTakePictureButton;
     private TextureView mTextureView;
     private static final SparseIntArray ORIENTATIONS = new SparseIntArray();
     static {
@@ -238,6 +207,8 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     long redMean;
     long greenMean;
     private static double currentCamX;
+    private GraphView accelGraph;
+    private GraphView camGraph;
     private LineGraphSeries<DataPoint> redSeries;
     private LineGraphSeries<DataPoint> greenSeries;
 
@@ -288,8 +259,8 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
 
         sensorManager=(SensorManager) getSystemService(SENSOR_SERVICE);
         sensorManager.registerListener(this, sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER), SensorManager.SENSOR_DELAY_NORMAL);
-        GraphView graph = (GraphView) findViewById(R.id.graph);
-        GraphView camGraph = (GraphView) findViewById(R.id.camgraph);
+        accelGraph = (GraphView) findViewById(R.id.graph);
+        camGraph = (GraphView) findViewById(R.id.camgraph);
 
         redSeries = new LineGraphSeries<>();
         redSeries.setColor(Color.RED);
@@ -308,30 +279,37 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         camGraph.getViewport().setMinX(0);
         camGraph.getViewport().setMaxX(10);
         camGraph.getViewport().setYAxisBoundsManual(true);
-        camGraph.getViewport().setMinY(-255);
+        camGraph.getViewport().setMinY(0);
         camGraph.getViewport().setMaxY(255);
 
         currentCamX = 0.0;
 
-        series = new LineGraphSeries<>();
-        series.setColor(Color.MAGENTA);
-        graph.addSeries(series);
+        rawAccelSeries = new LineGraphSeries<>();
+        rawAccelSeries.setColor(Color.LTGRAY);
+        filteredAccelSeries = new LineGraphSeries<>();
+        filteredAccelSeries.setColor(Color.MAGENTA);
+        smoothedAccelSeries = new LineGraphSeries<>();
+        smoothedAccelSeries.setColor(Color.BLACK);
+
+        accelGraph.addSeries(rawAccelSeries);
+        accelGraph.addSeries(filteredAccelSeries);
+        accelGraph.addSeries(smoothedAccelSeries);
 
         // https://stackoverflow.com/a/36400198
-        graph.getGridLabelRenderer().setGridStyle(GridLabelRenderer.GridStyle.NONE);
-        graph.getGridLabelRenderer().setHorizontalLabelsVisible(false);
-        graph.getGridLabelRenderer().setVerticalLabelsVisible(false);
+        accelGraph.getGridLabelRenderer().setGridStyle(GridLabelRenderer.GridStyle.NONE);
+        accelGraph.getGridLabelRenderer().setHorizontalLabelsVisible(false);
+        accelGraph.getGridLabelRenderer().setVerticalLabelsVisible(false);
 
-        graph.getViewport().setScalable(false);
-        graph.getViewport().setScrollable(false);
-        graph.getViewport().setXAxisBoundsManual(true);
-        graph.getViewport().setMinX(0);
-        graph.getViewport().setMaxX(200);
-        graph.getViewport().setYAxisBoundsManual(true);
-        graph.getViewport().setMinY(-0.05);
-        graph.getViewport().setMaxY(0.05);
+        accelGraph.getViewport().setScalable(false);
+        accelGraph.getViewport().setScrollable(false);
+        accelGraph.getViewport().setXAxisBoundsManual(true);
+        accelGraph.getViewport().setMinX(0);
+        accelGraph.getViewport().setMaxX(200);
+        accelGraph.getViewport().setYAxisBoundsManual(true);
+        accelGraph.getViewport().setMinY(-0.01);
+        accelGraph.getViewport().setMaxY(0.01);
 
-        currentX = 0.0;
+        currentAccelX = 0.0;
 
         // finding Views
         mTextureView = (TextureView) findViewById(R.id.texture);
@@ -500,6 +478,8 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
 
                     redSeries.appendData(new DataPoint(currentCamX,redMean), true, 10);
                     greenSeries.appendData(new DataPoint(currentCamX,greenMean), true, 10);
+
+
                     currentCamX++;
                     image.close();
                 }
@@ -621,6 +601,5 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         }
     }
 
-    //onpause etc blitz anpassen
 
 }
