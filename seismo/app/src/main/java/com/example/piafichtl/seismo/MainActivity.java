@@ -57,24 +57,68 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     Vector<Pair> redValues = new Vector<>();
     Vector<Pair> greenValues = new Vector<>();
     Vector<Pair> accelValues = new Vector<>();
-    Pair<Long, Long> red;
-    Pair<Long, Long> green;
-    Pair<Long, Float> accel;
+    Vector<Pair> accelSmoothValues = new Vector<>();
+
 
     public void calculateBloodPressure() {
         // iterate red values and check if the value rises or not
         Vector<Long> fingerPulses = new Vector<>();
+        long sumPulseDifference = 0;
         long lastValue = 0;
+        long lastTime = 0;
         for (Pair<Long,Long> r : redValues) {
             if (r.second > lastValue) {
                 // save only times where value increases
                 fingerPulses.add(r.first);
+                if (lastValue != 0) {
+                    sumPulseDifference += r.first - lastTime;
+                }
                 lastValue = r.second;
+                lastTime = r.first;
             } else if (r.second < lastValue) {
                 lastValue = r.second;
             }
         }
-        Vector<Float> accelerationPeaks = new Vector<>();
+        long PPG = sumPulseDifference / fingerPulses.size();
+
+        // get approximate peaks
+        Vector<Long> possibleHeartBeats = new Vector<>();
+        Pair<Long,Float> current = accelSmoothValues.firstElement();
+        Pair<Long,Float> possiblePeak = current;
+        for (Pair<Long,Float> a : accelSmoothValues) {
+            if (current.second <= a.second) {
+                possiblePeak = a;
+                current = a;
+            } else {
+                possibleHeartBeats.add(possiblePeak.first);
+                current = a;
+            }
+        }
+
+        // limiting signals to the closest acceleration signal that came before the actual pulse
+        Vector<Long> closestSignals = new Vector<>();
+        long sumBeatDifference = 0;
+        lastTime = 0;
+        for (long f : fingerPulses) {
+            long difference = Math.abs(possibleHeartBeats.firstElement() - f);
+            long possibleMatch = 0;
+            for (long p : possibleHeartBeats) {
+                if (p < f) {
+                    long cdifference = Math.abs(p - f);
+                    if (cdifference < difference) {
+                        possibleMatch = p;
+                        difference = cdifference;
+                    }
+                }
+            }
+            if (lastTime != 0) {
+                sumBeatDifference += f-lastTime;
+            }
+            lastTime = f;
+            closestSignals.add(possibleMatch);
+        }
+
+        long SCG = sumBeatDifference / closestSignals.size();
 
         // smoothed z-score algorithm https://stackoverflow.com/a/48772305
 
@@ -83,8 +127,11 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         // (the acceleration shows a jump from a minimum to maximum with a heart beat)
         // compare values to acceleration maximums and stabilize result
         // calculate time interval from one maximum to its corresponding finger pulse
-        Log.i(TAG,fingerPulses.toString());
-        Log.i(TAG,accelerationPeaks.toString());
+        Log.i(TAG,"FINGER PULSE SIGNALS " + fingerPulses.toString());
+        Log.i(TAG,"\nPOSSIBLE HEARTBEATS " + possibleHeartBeats.toString());
+        Log.i(TAG,"\nMATCHING HEARTBEAT SIGNALS " + closestSignals.toString());
+        Log.i(TAG,"\n\nPPG " + PPG);
+        Log.i(TAG,"\nSCG " + SCG);
 
     }
 
@@ -101,18 +148,17 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             Log.i(TAG, "RED VALUE MEASUREMENT [" + redValues.size() + "]\n" + redValues.toString());
             Log.i(TAG, "\nGREEN VALUE MEASUREMENT [" + greenValues.size() + "]\n" + greenValues.toString());
             Log.i(TAG, "\nACCELERATION VALUE MEASUREMENT [" + accelValues.size() + "]\n" + accelValues.toString());
+            Log.i(TAG, "\nSMOOTHED ACCELERATION VALUE MEASUREMENT [" + accelSmoothValues.size() + "]\n" + accelSmoothValues.toString());
             calculateBloodPressure();
 
         }
 
         @Override
         public void onTick(long millisUntilFinished) {
-            red = new Pair<>(timer - millisUntilFinished, redMean);
-            green = new Pair<>(timer - millisUntilFinished, greenMean);
-            accel = new Pair<>(timer - millisUntilFinished, currentAcceleration);
-            redValues.add(red);
-            greenValues.add(green);
-            accelValues.add(accel);
+            redValues.add(new Pair<>(timer - millisUntilFinished, redMean));
+            greenValues.add(new Pair<>(timer - millisUntilFinished, greenMean));
+            accelValues.add(new Pair<>(timer - millisUntilFinished, currentAcceleration));
+            accelSmoothValues.add(new Pair<>(timer - millisUntilFinished, currentSmoothAcceleration));
         }
     }
 
@@ -126,7 +172,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     private LineGraphSeries<DataPoint> smoothedAccelSeries;
     private static double currentAccelX;
     double ax,ay,az;
-    float currentAcceleration;
+    float currentAcceleration, currentSmoothAcceleration;
     float lastAcceleration[] = new float[3];
     float accelFilterA[] = new float[3];
     float accelFilterB[] = new float[3];
@@ -161,9 +207,10 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             accelFilterB[2] = sensorEvent.values[2] - gravityB[2];
         }
         currentAcceleration = accelFilterA[1];
-        rawAccelSeries.appendData(new DataPoint(currentAccelX,(float)ay), true, 200);
-        filteredAccelSeries.appendData(new DataPoint(currentAccelX,currentAcceleration), true, 200);
-        smoothedAccelSeries.appendData(new DataPoint(currentAccelX,accelFilterB[1]), true, 200);
+        currentSmoothAcceleration = accelFilterB[1];
+        rawAccelSeries.appendData(new DataPoint(currentAccelX,(float)ay), true, 100);
+        filteredAccelSeries.appendData(new DataPoint(currentAccelX,currentAcceleration), true, 100);
+        smoothedAccelSeries.appendData(new DataPoint(currentAccelX,currentSmoothAcceleration), true, 100);
         currentAccelX++;
     }
 
@@ -245,7 +292,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
                                                 //mStartButton.setVisibility(View.GONE);
                                                 startingTime = System.currentTimeMillis();
                                                 measuring = true;
-                                                CountDownTimerMeasurement timer = new CountDownTimerMeasurement(10000,10);
+                                                CountDownTimerMeasurement timer = new CountDownTimerMeasurement(10000,100);
                                                 timer.start();
                                                 Toast.makeText(MainActivity.this, "Starting measurement", Toast.LENGTH_LONG).show();
                                             }});
@@ -285,11 +332,11 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         currentCamX = 0.0;
 
         rawAccelSeries = new LineGraphSeries<>();
-        rawAccelSeries.setColor(Color.LTGRAY);
+        rawAccelSeries.setColor(Color.GRAY);
         filteredAccelSeries = new LineGraphSeries<>();
         filteredAccelSeries.setColor(Color.MAGENTA);
         smoothedAccelSeries = new LineGraphSeries<>();
-        smoothedAccelSeries.setColor(Color.BLACK);
+        smoothedAccelSeries.setColor(Color.LTGRAY);
 
         accelGraph.addSeries(rawAccelSeries);
         accelGraph.addSeries(filteredAccelSeries);
@@ -304,7 +351,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         accelGraph.getViewport().setScrollable(false);
         accelGraph.getViewport().setXAxisBoundsManual(true);
         accelGraph.getViewport().setMinX(0);
-        accelGraph.getViewport().setMaxX(200);
+        accelGraph.getViewport().setMaxX(100);
         accelGraph.getViewport().setYAxisBoundsManual(true);
         accelGraph.getViewport().setMinY(-0.01);
         accelGraph.getViewport().setMaxY(0.01);
