@@ -1,4 +1,7 @@
 <resources>
-    <string name="app_name">seismo</string>
+    <string name="app_name">Seismo: Heart Monitoring</string>
     <string name="start">Start!</string>
+    <string name="menu_help">Help</string>
+    <string name="menu_computation">Measurement</string>
+    <string name="menu_results">Results</string>
 </resources>

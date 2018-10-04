@@ -36,6 +36,7 @@ import android.view.Surface;
 import android.view.TextureView;
 import android.view.View;
 import android.widget.Button;
+import android.widget.TextView;
 import android.widget.Toast;
 
 import com.jjoe64.graphview.GraphView;
@@ -45,8 +46,10 @@ import com.jjoe64.graphview.series.LineGraphSeries;
 
 import java.io.File;
 import java.util.ArrayList;
+import java.util.Iterator;
 import java.util.List;
 import java.util.Vector;
+import java.util.concurrent.TimeUnit;
 
 import static android.support.v4.math.MathUtils.clamp;
 
@@ -122,16 +125,21 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
 
         // smoothed z-score algorithm https://stackoverflow.com/a/48772305
 
+        long sumMainDifference = 0;
 
-        // get acceleration maximums
-        // (the acceleration shows a jump from a minimum to maximum with a heart beat)
-        // compare values to acceleration maximums and stabilize result
-        // calculate time interval from one maximum to its corresponding finger pulse
+        for (int i = 1; i < closestSignals.size(); i++) {
+            sumMainDifference += fingerPulses.elementAt(i) - closestSignals.elementAt(i);
+        }
+
+        long PTT = sumMainDifference / closestSignals.size();
+
+
         Log.i(TAG,"FINGER PULSE SIGNALS " + fingerPulses.toString());
         Log.i(TAG,"\nPOSSIBLE HEARTBEATS " + possibleHeartBeats.toString());
         Log.i(TAG,"\nMATCHING HEARTBEAT SIGNALS " + closestSignals.toString());
-        Log.i(TAG,"\n\nPPG " + PPG);
-        Log.i(TAG,"\nSCG " + SCG);
+        Log.i(TAG,"\n\nPPG " + PPG + " milliseconds");
+        Log.i(TAG,"\nSCG " + SCG + " milliseconds");
+        Log.i(TAG,"\nPTT " + PTT + " milliseconds");
 
     }
 
@@ -159,6 +167,8 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             greenValues.add(new Pair<>(timer - millisUntilFinished, greenMean));
             accelValues.add(new Pair<>(timer - millisUntilFinished, currentAcceleration));
             accelSmoothValues.add(new Pair<>(timer - millisUntilFinished, currentSmoothAcceleration));
+            long time = TimeUnit.MILLISECONDS.toSeconds(millisUntilFinished);
+            mCountDown.setText(String.valueOf(time));
         }
     }
 
@@ -260,6 +270,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
     private LineGraphSeries<DataPoint> greenSeries;
 
     private Button mStartButton;
+    private TextView mCountDown;
     boolean measuring = false;
     long startingTime;
 
@@ -362,6 +373,8 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         mTextureView = (TextureView) findViewById(R.id.texture);
         assert mTextureView != null;
         mTextureView.setSurfaceTextureListener(mTextureListener);
+        mCountDown = (TextView) findViewById(R.id.countdown);
+
     }
 
     TextureView.SurfaceTextureListener mTextureListener = new TextureView.SurfaceTextureListener() {
@@ -400,15 +413,6 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         public void onError(CameraDevice camera, int error) {
             mCameraDevice.close();
             mCameraDevice = null;
-        }
-    };
-
-    final CameraCaptureSession.CaptureCallback captureCallbackListener = new CameraCaptureSession.CaptureCallback() {
-        @Override
-        public void onCaptureCompleted(CameraCaptureSession session, CaptureRequest request, TotalCaptureResult result) {
-            super.onCaptureCompleted(session, request, result);
-            Toast.makeText(MainActivity.this, "Saved:" + mFile, Toast.LENGTH_SHORT).show();
-            createCameraPreview();
         }
     };
 
