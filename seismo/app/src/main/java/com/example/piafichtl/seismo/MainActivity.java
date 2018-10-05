@@ -46,7 +46,8 @@ import com.jjoe64.graphview.series.LineGraphSeries;
 
 import java.io.File;
 import java.util.ArrayList;
-import java.util.Iterator;
+import java.util.Collection;
+import java.util.Collections;
 import java.util.List;
 import java.util.Vector;
 import java.util.concurrent.TimeUnit;
@@ -125,13 +126,15 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
 
         // smoothed z-score algorithm https://stackoverflow.com/a/48772305
 
-        long sumMainDifference = 0;
+        Vector<Long> transitDifferences = new Vector<>();
 
         for (int i = 1; i < closestSignals.size(); i++) {
-            sumMainDifference += fingerPulses.elementAt(i) - closestSignals.elementAt(i);
+            transitDifferences.add(fingerPulses.elementAt(i) - closestSignals.elementAt(i));
         }
 
-        long PTT = sumMainDifference / closestSignals.size();
+        Collections.sort(transitDifferences);
+
+        long PTT = transitDifferences.elementAt(transitDifferences.size()/2);
 
 
         Log.i(TAG,"FINGER PULSE SIGNALS " + fingerPulses.toString());
@@ -140,6 +143,11 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         Log.i(TAG,"\n\nPPG " + PPG + " milliseconds");
         Log.i(TAG,"\nSCG " + SCG + " milliseconds");
         Log.i(TAG,"\nPTT " + PTT + " milliseconds");
+
+        PTTText.setText(getString(R.string.PTT, PTT));
+        BPMText.setText(getString(R.string.BPM, (SCG*60)/1000));
+        SBPText.setText(getString(R.string.SBP, (-0.6881*PTT) + 210.94));
+
 
     }
 
@@ -158,6 +166,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             Log.i(TAG, "\nACCELERATION VALUE MEASUREMENT [" + accelValues.size() + "]\n" + accelValues.toString());
             Log.i(TAG, "\nSMOOTHED ACCELERATION VALUE MEASUREMENT [" + accelSmoothValues.size() + "]\n" + accelSmoothValues.toString());
             calculateBloodPressure();
+            mStartButton.setText(getString(R.string.start));
 
         }
 
@@ -168,7 +177,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             accelValues.add(new Pair<>(timer - millisUntilFinished, currentAcceleration));
             accelSmoothValues.add(new Pair<>(timer - millisUntilFinished, currentSmoothAcceleration));
             long time = TimeUnit.MILLISECONDS.toSeconds(millisUntilFinished);
-            mCountDown.setText(String.valueOf(time));
+            mStartButton.setText(String.valueOf(time));
         }
     }
 
@@ -197,7 +206,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
             ay=sensorEvent.values[1];
             az=sensorEvent.values[2];
 
-            final float alpha = 0.15f;
+            final float alpha = 0.1f;
             final float beta = 0.005f;
 
             gravityA[0] = alpha * gravityA[0] + (1 - alpha) * sensorEvent.values[0];
@@ -271,6 +280,9 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
 
     private Button mStartButton;
     private TextView mCountDown;
+    private TextView PTTText;
+    private TextView BPMText;
+    private TextView SBPText;
     boolean measuring = false;
     long startingTime;
 
@@ -303,7 +315,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
                                                 //mStartButton.setVisibility(View.GONE);
                                                 startingTime = System.currentTimeMillis();
                                                 measuring = true;
-                                                CountDownTimerMeasurement timer = new CountDownTimerMeasurement(10000,100);
+                                                CountDownTimerMeasurement timer = new CountDownTimerMeasurement(30000,100);
                                                 timer.start();
                                                 Toast.makeText(MainActivity.this, "Starting measurement", Toast.LENGTH_LONG).show();
                                             }});
@@ -316,7 +328,7 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         }
 
         sensorManager=(SensorManager) getSystemService(SENSOR_SERVICE);
-        sensorManager.registerListener(this, sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER), SensorManager.SENSOR_DELAY_NORMAL);
+        sensorManager.registerListener(this, sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER), SensorManager.SENSOR_DELAY_UI);
         accelGraph = (GraphView) findViewById(R.id.graph);
         camGraph = (GraphView) findViewById(R.id.camgraph);
 
@@ -364,8 +376,8 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         accelGraph.getViewport().setMinX(0);
         accelGraph.getViewport().setMaxX(100);
         accelGraph.getViewport().setYAxisBoundsManual(true);
-        accelGraph.getViewport().setMinY(-0.01);
-        accelGraph.getViewport().setMaxY(0.01);
+        accelGraph.getViewport().setMinY(-0.03);
+        accelGraph.getViewport().setMaxY(0.03);
 
         currentAccelX = 0.0;
 
@@ -374,6 +386,9 @@ public class MainActivity extends AppCompatActivity implements SensorEventListen
         assert mTextureView != null;
         mTextureView.setSurfaceTextureListener(mTextureListener);
         mCountDown = (TextView) findViewById(R.id.countdown);
+        PTTText = (TextView) findViewById(R.id.PTTText);
+        BPMText = (TextView) findViewById(R.id.BPMText);
+        SBPText = (TextView) findViewById(R.id.SBPText);
 
     }
 
